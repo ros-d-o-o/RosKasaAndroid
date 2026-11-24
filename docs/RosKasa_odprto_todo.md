@@ -8,7 +8,7 @@
 //6. združi račune
 //7. delitev računa
 //8. zamenjal marker
-9. ceniki - prazniki, vikend cene
+//9. ceniki - prazniki, vikend cene
 //10. osebje, kartica_id, kartica2_id
 //11. prioritete
 //12. rajoni filter mize

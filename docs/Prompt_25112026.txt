@@ -1,0 +1,1 @@
+Preberi docs/TODO_FAZNI_PLAN.md, docs/REVIZIJA_DELPHI_VS_JAVA.md in docs/DELPHI_SPECIFIKACIJA_ROSKASALIGHT16.md ter začniva z izvedbo Faze P0. Po vsaki končani točki posodobi status v docs/TODO_FAZNI_PLAN.md.
