@@ -6,16 +6,44 @@ base {
     archivesName.set("RosKasa")
 }
 
+def versionPropsFile = rootProject.file('version.properties')
+def versionProps = new Properties()
+if (versionPropsFile.canRead()) {
+    versionPropsFile.withInputStream { versionProps.load(it) }
+} else {
+    versionProps['VERSION_MAJOR'] = '1'
+    versionProps['VERSION_MINOR'] = '0'
+    versionProps['VERSION_PATCH'] = '0'
+    versionProps['VERSION_CODE'] = '1'
+}
+
+def isReleaseBuild = gradle.startParameter.taskNames.any {
+    it.toLowerCase().contains('release')
+}
+
+int vMajor = versionProps['VERSION_MAJOR'].toInteger()
+int vMinor = versionProps['VERSION_MINOR'].toInteger()
+int vPatch = versionProps['VERSION_PATCH'].toInteger()
+int vCode = versionProps['VERSION_CODE'].toInteger()
+
+if (isReleaseBuild) {
+    vCode += 1
+    vPatch += 1
+    versionProps['VERSION_CODE'] = vCode.toString()
+    versionProps['VERSION_PATCH'] = vPatch.toString()
+    versionPropsFile.withWriter { versionProps.store(it, 'Auto-incremented on release build') }
+}
+
 android {
     namespace 'si.ros.RosKasa'
-    compileSdk 34
+    compileSdk 36
 
     defaultConfig {
         applicationId "si.ros.RosKasa"
         minSdk 26
-        targetSdk 34
-        versionCode 1
-        versionName "1.0.0"
+        targetSdk 36
+        versionCode vCode
+        versionName "${vMajor}.${vMinor}.${vPatch}"
 
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
     }
