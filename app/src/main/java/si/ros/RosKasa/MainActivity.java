@@ -37,6 +37,7 @@ public class MainActivity extends AppCompatActivity {
 
         initNfc();
         initPaymentLaunchers();
+        requestBluetoothPermissionsIfNeeded();
 
         // Nastavitev napak za SOAP klice v debug načinu
         RosKasaSoapClient.setErrorListener((method, errorMessage) -> {
@@ -47,11 +48,42 @@ public class MainActivity extends AppCompatActivity {
             navigateToFragment(new LoginFragment());
         }
 
-        checkPaymentRecoveryOnStartup();
+        // Android gumb Back: potrditveni dialog za izhod + pošiljanje kronologije (skladno z Delphi)
+        getOnBackPressedDispatcher().addCallback(this, new androidx.activity.OnBackPressedCallback(true) {
+            @Override
+            public void handleOnBackPressed() {
+                new androidx.appcompat.app.AlertDialog.Builder(MainActivity.this)
+                        .setTitle("Izhod iz aplikacije")
+                        .setMessage("Ali res želite zapreti aplikacijo RosKasa?")
+                        .setPositiveButton("Da", (d, w) -> {
+                            Globals.getInstance().vpisiKronologijo("Izhod iz aplikacije (Back)");
+                            Globals.getInstance().posljiOfflineKronologijo();
+                            finish();
+                        })
+                        .setNegativeButton("Ne", null)
+                        .show();
+            }
+        });
     }
 
     private android.nfc.NfcAdapter nfcAdapter;
     private si.ros.RosKasa.nfc.NfcHelper.OnNfcTagReadListener nfcTagListener;
+
+    public void requestBluetoothPermissionsIfNeeded() {
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.S) {
+            boolean hasConnect = androidx.core.content.ContextCompat.checkSelfPermission(
+                    this, android.Manifest.permission.BLUETOOTH_CONNECT) == android.content.pm.PackageManager.PERMISSION_GRANTED;
+            boolean hasScan = androidx.core.content.ContextCompat.checkSelfPermission(
+                    this, android.Manifest.permission.BLUETOOTH_SCAN) == android.content.pm.PackageManager.PERMISSION_GRANTED;
+            if (!hasConnect || !hasScan) {
+                androidx.core.app.ActivityCompat.requestPermissions(
+                        this,
+                        new String[]{android.Manifest.permission.BLUETOOTH_CONNECT, android.Manifest.permission.BLUETOOTH_SCAN},
+                        1002
+                );
+            }
+        }
+    }
 
     private void initNfc() {
         try {
@@ -86,6 +118,7 @@ public class MainActivity extends AppCompatActivity {
     }
 
     private void startNfcListening() {
+        if (Globals.getInstance().isAndroidNfcIzklop()) return;
         if (nfcAdapter == null) return;
         if (!nfcAdapter.isEnabled()) {
             Toast.makeText(this, "Opozorilo: NFC je izklopljen v nastavitvah sistema!", Toast.LENGTH_SHORT).show();
@@ -392,11 +425,21 @@ public class MainActivity extends AppCompatActivity {
                         } else {
                             pl.setNapitnina(null);
                         }
+                        if (r.getRacPozic() != null) {
+                            for (si.ros.RosKasa.models.PozicijaTp p : r.getRacPozic()) {
+                                if (p != null) p.setNeNarocaj(true);
+                            }
+                        }
                         if (r.getRacPlaci() == null) r.setRacPlaci(new java.util.ArrayList<>());
                         r.getRacPlaci().add(pl);
                         r.setPlacano(r.getPlacano().add(znesekRacuna));
-                        r.setStatus(1);
                         r.preracunajVsote();
+                        if (r.getPlacano().compareTo(r.getZnesek()) >= 0) {
+                            r.setStatus(2);
+                            r.setFiskalizacija(1);
+                        } else {
+                            r.setStatus(1);
+                        }
 
                         // 1. setSlipEma
                         si.ros.RosKasa.models.SlipEmaTp slip = new si.ros.RosKasa.models.SlipEmaTp();

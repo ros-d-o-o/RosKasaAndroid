@@ -37,6 +37,7 @@ public class LoginFragment extends Fragment {
 
     private FragmentLoginBinding binding;
     private AppPreferences prefs;
+    private int pinFailedAttempts = 0;
 
     private final ExecutorService executor = Executors.newSingleThreadExecutor();
     private final Handler mainHandler = new Handler(Looper.getMainLooper());
@@ -65,7 +66,10 @@ public class LoginFragment extends Fragment {
         updateUiMode();
 
         if (prefs.isRegistered()) {
-            if (Globals.getInstance().getCachedOsebje().isEmpty()) {
+            // getAppConfig vedno svež ob zagonu (skladno z Delphi SetupIzWeba(True) + CheckPovezava)
+            if (!Globals.isNetworkAvailable(requireContext())) {
+                Toast.makeText(requireContext(), "Opozorilo: Ni internetne povezave! Uporabljeni bodo lokalni podatki.", Toast.LENGTH_LONG).show();
+            } else {
                 executor.execute(() -> {
                     try {
                         int mId = 1;
@@ -152,11 +156,41 @@ public class LoginFragment extends Fragment {
         String uIme = binding.etUsername.getText().toString().trim();
         String geslo = binding.etPassword.getText().toString().trim();
 
-        if (rawUrl.isEmpty() || mobileId.isEmpty() || uIme.isEmpty() || geslo.isEmpty()) {
+        // Google Play Demo bypass (skladno z Delphi FormPrijava / demo registracija)
+        if (("DemoGooglePlay".equalsIgnoreCase(uIme) && "1DemoApprove6840".equals(geslo))
+                || "demo".equalsIgnoreCase(rawUrl)) {
+            if (rawUrl.isEmpty() || "demo".equalsIgnoreCase(rawUrl)) {
+                rawUrl = "https://demo.ros.si/KasaWS/KasaService.svc";
+                binding.etServerUrl.setText(rawUrl);
+            }
+            if (mobileId.isEmpty() || "demo".equalsIgnoreCase(binding.etServerUrl.getText().toString().trim())) {
+                mobileId = "6";
+                binding.etMobileId.setText(mobileId);
+            } else if ("DemoGooglePlay".equalsIgnoreCase(uIme)) {
+                mobileId = "6";
+                binding.etMobileId.setText(mobileId);
+            }
+            if (uIme.isEmpty()) {
+                uIme = "DemoGooglePlay";
+                binding.etUsername.setText(uIme);
+            }
+            if (geslo.isEmpty()) {
+                geslo = "1DemoApprove6840";
+                binding.etPassword.setText(geslo);
+            }
+        }
+
+        if (rawUrl != null) {
+            rawUrl = rawUrl.replaceAll("\\s+", "");
+        }
+        if (rawUrl == null || rawUrl.isEmpty() || mobileId.isEmpty() || uIme.isEmpty() || geslo.isEmpty()) {
             Toast.makeText(requireContext(), "Prosim izpolnite vsa polja!", Toast.LENGTH_SHORT).show();
             return;
         }
 
+        final String finalMobileId = mobileId;
+        final String finalUIme = uIme;
+        final String finalGeslo = geslo;
         final String url = RosKasaSoapClient.formatEndpoint(rawUrl);
         if (!url.equals(rawUrl)) {
             binding.etServerUrl.setText(url);
@@ -167,12 +201,12 @@ public class LoginFragment extends Fragment {
 
         executor.execute(() -> {
             try {
-                OsebaTokenResult result = RosKasaSoapClient.getOsebaToken(url, uIme, geslo);
+                OsebaTokenResult result = RosKasaSoapClient.getOsebaToken(url, finalUIme, finalGeslo);
                 if (result.isSuccess()) {
-                    prefs.saveDeviceInfo(url, mobileId, result.getToken());
+                    prefs.saveDeviceInfo(url, finalMobileId, result.getToken());
 
                     int mId = 1;
-                    try { mId = Integer.parseInt(mobileId); } catch (Exception ignored) {}
+                    try { mId = Integer.parseInt(finalMobileId); } catch (Exception ignored) {}
 
                     // Delphi: Odgovor := R16K.Servis.aktivirajMobile(StrToInt(edMobileId.text), Token);
                     // Strežnik s tem postavi mobile.aktivnost na 'D'
@@ -233,9 +267,12 @@ public class LoginFragment extends Fragment {
 
     private void handleNfcLogin(NfcHelper.NfcCardInfo cardInfo) {
         if (cardInfo == null) return;
-        Log.d("LoginFragment", "NFC kartica zaznana: " + cardInfo);
-
         Globals g = Globals.getInstance();
+        if (g.isAndroidNfcIzklop() || (!g.isPnfcprijava() && !g.ispHidPrijava())) {
+            Log.d("LoginFragment", "NFC prijava je izklopljena (ANDROIDNFCIZKLOP / NFCPRIJAVA).");
+            return;
+        }
+        Log.d("LoginFragment", "NFC kartica zaznana: " + cardInfo);
         if (g.getCachedOsebje().isEmpty()) {
             prefs.loadSavedSifranti();
         }
@@ -263,8 +300,9 @@ public class LoginFragment extends Fragment {
 
     private void handlePinLogin() {
         String pin = binding.etPinCode.getText().toString().trim();
-        if (pin.isEmpty()) {
-            Toast.makeText(requireContext(), "Vnesite PIN kodo!", Toast.LENGTH_SHORT).show();
+        if (pin.isEmpty() || "0".equals(pin)) {
+            binding.etPinCode.setText("");
+            Toast.makeText(requireContext(), "Vnesite veljavno PIN kodo!", Toast.LENGTH_SHORT).show();
             return;
         }
 
@@ -276,10 +314,19 @@ public class LoginFragment extends Fragment {
         OsebaTp oseba = g.najdiOseboZaPin(pin);
         if (oseba == null) {
             binding.etPinCode.setText("");
-            Toast.makeText(requireContext(), "Napačna PIN koda!", Toast.LENGTH_SHORT).show();
+            pinFailedAttempts++;
+            if (pinFailedAttempts >= 3) {
+                Toast.makeText(requireContext(), "3 neuspešni poskusi prijave! Aplikacija se zapira.", Toast.LENGTH_LONG).show();
+                if (getActivity() != null) {
+                    getActivity().finishAffinity();
+                }
+                return;
+            }
+            Toast.makeText(requireContext(), "Napačna PIN koda! (Poskus " + pinFailedAttempts + "/3)", Toast.LENGTH_SHORT).show();
             return;
         }
 
+        pinFailedAttempts = 0;
         binding.etPinCode.setText("");
         potrdiPrijavoOsebe(oseba);
     }
@@ -297,20 +344,30 @@ public class LoginFragment extends Fragment {
         }
 
         g.setTekocaOseba(oseba);
-        Toast.makeText(requireContext(), "Prijava uspešna: " + oseba.getNaziv(), Toast.LENGTH_SHORT).show();
+        g.posljiOfflineKronologijo();
+        // [DEBUG-TOAST] Toast.makeText(requireContext(), "Prijava uspešna: " + oseba.getNaziv(), Toast.LENGTH_SHORT).show();
 
-        // Osveži nastavitve in naloži plačila ter cenik v ozadju
+        // Osveži nastavitve in naloži 6 velikih šifrantov (iz lokalnega disk cache če je veljaven, sicer SOAP)
+        final android.content.Context appCtx = requireContext().getApplicationContext();
         if (prefs.isRegistered()) {
             executor.execute(() -> {
                 try {
                     int mId = 1;
                     try { mId = Integer.parseInt(prefs.getMobileId()); } catch (Exception ignored) {}
 
-                    MobileSetupTp setup = RosKasaSoapClient.getAppConfig(prefs.getServerUrl(), prefs.getToken(), mId);
-                    prefs.saveMobileSetup(setup);
+                    if (Globals.isNetworkAvailable(appCtx)) {
+                        MobileSetupTp setup = RosKasaSoapClient.getAppConfig(prefs.getServerUrl(), prefs.getToken(), mId);
+                        prefs.saveMobileSetup(setup);
+                    }
+
+                    // Enkratna SixTap recovery kontrola šele PO prijavi in osvežitvi getAppConfig
+                    if (getActivity() instanceof MainActivity) {
+                        MainActivity mainAct = (MainActivity) getActivity();
+                        mainAct.runOnUiThread(mainAct::tapOnRecoverExecute);
+                    }
 
                     // Preverjanje CENA2 (vikend / prazniki) pri zagonu programa
-                    if (g.isPrazniki() && !g.isCena2Aktivna()) {
+                    if (g.isPrazniki() && !g.isCena2Aktivna() && Globals.isNetworkAvailable(appCtx)) {
                         try {
                             boolean jePraznik = RosKasaSoapClient.vrniPraznike(prefs.getServerUrl(), prefs.getToken(), new Date(), g.getPraznikiObrat());
                             if (jePraznik) {
@@ -329,16 +386,18 @@ public class LoginFragment extends Fragment {
                         }
                     }
 
-                    // Nalaganje plačilnih metod (getNacPlac2)
-                    try {
-                        List<NacPlacTp> placila = RosKasaSoapClient.getNacPlac2(prefs.getServerUrl(), prefs.getToken(), mId);
-                        Globals.getInstance().filterAndSetCachedPlacila(placila);
-                    } catch (Exception ex) {
-                        Log.w("LoginFragment", "Napaka pri nalaganju plačil: " + ex.getMessage());
-                    }
+                    // Poskusi naložiti 6 velikih šifrantov iz disk JSON cache (CenikLokalno + CenikStDniObnova)
+                    boolean loadedFromDiskCache = si.ros.RosKasa.cache.LocalCacheManager.loadLargeSifrantiIfValid(appCtx);
+                    if (!loadedFromDiskCache && Globals.isNetworkAvailable(appCtx)) {
+                        // 1. Plačilne metode (getNacPlac2)
+                        try {
+                            List<NacPlacTp> placila = RosKasaSoapClient.getNacPlac2(prefs.getServerUrl(), prefs.getToken(), mId);
+                            Globals.getInstance().filterAndSetCachedPlacila(placila);
+                        } catch (Exception ex) {
+                            Log.w("LoginFragment", "Napaka pri nalaganju plačil: " + ex.getMessage());
+                        }
 
-                    // Preload cenika v ozadju za takojšen lookup nazivov
-                    if (!Globals.getInstance().hasCachedCenik()) {
+                        // 2. Cenik (+ CenikVrVr + CenikVrCene)
                         int strmId = prefs.getHisObrat() > 0 ? prefs.getHisObrat() : 512200;
                         try {
                             List<CenikListAdapter.CenikItem> cenik = RosKasaSoapClient.getCenik(prefs.getServerUrl(), prefs.getToken(), strmId);
@@ -348,30 +407,45 @@ public class LoginFragment extends Fragment {
                         } catch (Exception ex) {
                             Log.w("LoginFragment", "Napaka pri prednalaganju cenika: " + ex.getMessage());
                         }
-                    }
 
-                    // Preload hitrih tipk v ozadju za takojšen lookup nazivov
-                    int tipkePosId = prefs.getTipkePosId();
-                    if (tipkePosId > 0 && !Globals.getInstance().hasCachedHitreTipke()) {
-                        try {
-                            List<HitraTipkaTp> tipke = RosKasaSoapClient.getHitreTipke(prefs.getServerUrl(), prefs.getToken(), tipkePosId);
-                            if (tipke != null && !tipke.isEmpty()) {
-                                Globals.getInstance().setCachedHitreTipke(tipke);
+                        // 3. Hitre tipke
+                        int tipkePosId = prefs.getTipkePosId();
+                        if (tipkePosId > 0) {
+                            try {
+                                List<HitraTipkaTp> tipke = RosKasaSoapClient.getHitreTipke(prefs.getServerUrl(), prefs.getToken(), tipkePosId);
+                                if (tipke != null && !tipke.isEmpty()) {
+                                    Globals.getInstance().setCachedHitreTipke(tipke);
+                                }
+                            } catch (Exception ex) {
+                                Log.w("LoginFragment", "Napaka pri prednalaganju hitrih tipk: " + ex.getMessage());
                             }
-                        } catch (Exception ex) {
-                            Log.w("LoginFragment", "Napaka pri prednalaganju hitrih tipk: " + ex.getMessage());
                         }
-                    }
 
-                    // Preload lojalnostnih popustov če je POPUSTLOJALNOST='D'
-                    if (Globals.getInstance().ispLojalnostPopust() && !Globals.getInstance().hasCachedLojalnostna()) {
+                        // 4. Dodatki
                         try {
-                            List<LojalnostnaTp> loj = RosKasaSoapClient.getLojalnostna(prefs.getServerUrl(), prefs.getToken());
-                            if (loj != null && !loj.isEmpty()) {
-                                Globals.getInstance().setCachedLojalnostna(loj);
+                            RosKasaSoapClient.getDodatki(prefs.getServerUrl(), prefs.getToken());
+                        } catch (Exception ignored) {}
+
+                        // 5. Storno razlogi
+                        try {
+                            List<si.ros.RosKasa.models.StornoRazlogTp> sr = RosKasaSoapClient.getStornoRazlogi(prefs.getServerUrl(), prefs.getToken());
+                            if (sr != null && !sr.isEmpty()) Globals.getInstance().setCachedStornoRazlogi(sr);
+                        } catch (Exception ignored) {}
+
+                        // 6. Lojalnostni popusti
+                        if (Globals.getInstance().ispLojalnostPopust()) {
+                            try {
+                                List<LojalnostnaTp> loj = RosKasaSoapClient.getLojalnostna(prefs.getServerUrl(), prefs.getToken());
+                                if (loj != null && !loj.isEmpty()) {
+                                    Globals.getInstance().setCachedLojalnostna(loj);
+                                }
+                            } catch (Exception ex) {
+                                Log.w("LoginFragment", "Napaka pri prednalaganju lojalnostnih popustov: " + ex.getMessage());
                             }
-                        } catch (Exception ex) {
-                            Log.w("LoginFragment", "Napaka pri prednalaganju lojalnostnih popustov: " + ex.getMessage());
+                        }
+
+                        if (g.isCenikLokalno()) {
+                            si.ros.RosKasa.cache.LocalCacheManager.saveLargeSifranti(appCtx);
                         }
                     }
                 } catch (Exception ignored) {}
@@ -380,7 +454,6 @@ public class LoginFragment extends Fragment {
 
         if (getActivity() instanceof MainActivity) {
             MainActivity mainAct = (MainActivity) getActivity();
-            mainAct.tapOnRecoverExecute();
             mainAct.navigateToFragment(new MizeFragment());
         }
     }

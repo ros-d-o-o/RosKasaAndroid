@@ -1,0 +1,55 @@
+[
+  {
+    "scenario": "TC01_SIMPLE_GOTOVINA",
+    "racun_id": 61881,
+    "status": "DONE"
+  },
+  {
+    "scenario": "TC02_PAKET_KRED_ROCNO",
+    "racun_id": 61882,
+    "status": "DONE"
+  },
+  {
+    "scenario": "TC03_LESTVICA_GOST_HOTELA",
+    "racun_id": 61883,
+    "status": "DONE"
+  },
+  {
+    "scenario": "TC04",
+    "status": "ERROR",
+    "error": "Timeout waiting for TabRacPlaci; last state={'racunId': -17, 'marker': 'Miza 58', 'tabIndex': 0, 'activeTab': 'TabCenik', 'pozicCount': 0, 'placiCount': 0, 'racGlavaCount': 0, 'layoutEPVisible': False, 'partnerVisible': False, 'sobeVisible': False, 'sobeCount': 2, 'zdruziVisible': False, 'splitVisible': False}"
+  },
+  {
+    "scenario": "TC05_DOBAVNICA_PRVA_OSEBNA_ZAVAROVALNICA",
+    "racun_id": 61885,
+    "partner_id": 654330,
+    "status": "DONE"
+  },
+  {
+    "scenario": "TC06_POPUST_99_CELOTEN_RACUN",
+    "racun_id": 61886,
+    "status": "DONE"
+  },
+  {
+    "scenario": "TC07_POPUST_1_POZICIJA",
+    "racun_id": 61887,
+    "status": "DONE"
+  },
+  {
+    "scenario": "TC08",
+    "status": "ERROR",
+    "error": "Tool error in call_method: {'content': [{'type': 'text', 'text': '{\"id\":1,\"ok\":false,\"error\":{\"code\":-32603,\"message\":\"call_method ZdruziExecute raised EListError: Item not found\"}}'}], 'isError': True}"
+  },
+  {
+    "scenario": "TC09_STORNO_Z_NOVIM_RACUNOM",
+    "source_racun_id": 61881,
+    "create_new": true,
+    "status": "DONE"
+  },
+  {
+    "scenario": "TC10_STORNO_BREZ_NOVEGA_RACUNA",
+    "source_racun_id": 61882,
+    "create_new": false,
+    "status": "DONE"
+  }
+]

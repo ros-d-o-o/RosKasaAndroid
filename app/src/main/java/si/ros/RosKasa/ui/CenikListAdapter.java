@@ -32,6 +32,10 @@ public class CenikListAdapter extends RecyclerView.Adapter<CenikListAdapter.View
         public double davekProc;
         public BigDecimal cena1 = BigDecimal.ZERO;
         public BigDecimal cena2 = BigDecimal.ZERO;
+        public int izpisNarocila = 0;
+        public String standard = "";
+        public boolean niMoznaIzbira = false;
+        public int cenikId = 0;
 
         public CenikItem(int nivo4Id, String naziv, String plu, BigDecimal cena, int nacinProdaje, double polnjenje) {
             this.nivo4Id = nivo4Id;
@@ -58,22 +62,25 @@ public class CenikListAdapter extends RecyclerView.Adapter<CenikListAdapter.View
                 } else {
                     if (this.cena2 != null && this.cena2.compareTo(BigDecimal.ZERO) != 0) {
                         this.cena = this.cena2;
-                    } else if (this.cena1 != null && this.cena1.compareTo(BigDecimal.ZERO) != 0) {
-                        this.cena = this.cena1;
+                    } else {
+                        this.cena = this.cena1 != null ? this.cena1 : BigDecimal.ZERO;
                     }
                 }
             } else {
-                if (this.cena1 != null && this.cena1.compareTo(BigDecimal.ZERO) != 0) {
-                    this.cena = this.cena1;
-                }
+                this.cena = this.cena1 != null ? this.cena1 : BigDecimal.ZERO;
             }
         }
 
         public String getFormattedNaziv() {
             String res = naziv != null ? naziv : "";
             if (plu != null && !plu.trim().isEmpty()) {
-                String formattedPlu = String.format(Locale.getDefault(), "%05d", Integer.parseInt(plu.trim()));
-                res += " [" + formattedPlu + "]";
+                String trimmedPlu = plu.trim();
+                try {
+                    String formattedPlu = String.format(Locale.getDefault(), "%05d", Integer.parseInt(trimmedPlu));
+                    res += " [" + formattedPlu + "]";
+                } catch (NumberFormatException e) {
+                    res += " [" + trimmedPlu + "]";
+                }
             }
             switch (nacinProdaje) {
                 case 1:

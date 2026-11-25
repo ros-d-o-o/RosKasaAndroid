@@ -237,7 +237,7 @@ public class AppPreferences {
     }
 
     public int getHisObrat() {
-        return prefs.getInt(KEY_HIS_OBRAT, 512200);
+        return prefs.getInt(KEY_HIS_OBRAT, 0);
     }
 
     public void setHisObrat(int obratId) {

@@ -10,6 +10,10 @@ public class PartnerTp {
     private String davcnaSt = "";
     private BigDecimal rabat = BigDecimal.ZERO;
     private String sklic = "";
+    private String davcnaSkupina = "";
+    private String nazivDavcnaSkupina = "";
+    private String nasUlicaDavcnaSkupina = "";
+    private String davcnaStSkupina = "";
 
     public PartnerTp() {}
 
@@ -67,6 +71,38 @@ public class PartnerTp {
 
     public void setSklic(String sklic) {
         this.sklic = sklic;
+    }
+
+    public String getDavcnaSkupina() {
+        return davcnaSkupina != null ? davcnaSkupina : "";
+    }
+
+    public void setDavcnaSkupina(String davcnaSkupina) {
+        this.davcnaSkupina = davcnaSkupina != null ? davcnaSkupina : "";
+    }
+
+    public String getNazivDavcnaSkupina() {
+        return nazivDavcnaSkupina != null ? nazivDavcnaSkupina : "";
+    }
+
+    public void setNazivDavcnaSkupina(String nazivDavcnaSkupina) {
+        this.nazivDavcnaSkupina = nazivDavcnaSkupina != null ? nazivDavcnaSkupina : "";
+    }
+
+    public String getNasUlicaDavcnaSkupina() {
+        return nasUlicaDavcnaSkupina != null ? nasUlicaDavcnaSkupina : "";
+    }
+
+    public void setNasUlicaDavcnaSkupina(String nasUlicaDavcnaSkupina) {
+        this.nasUlicaDavcnaSkupina = nasUlicaDavcnaSkupina != null ? nasUlicaDavcnaSkupina : "";
+    }
+
+    public String getDavcnaStSkupina() {
+        return davcnaStSkupina != null ? davcnaStSkupina : "";
+    }
+
+    public void setDavcnaStSkupina(String davcnaStSkupina) {
+        this.davcnaStSkupina = davcnaStSkupina != null ? davcnaStSkupina : "";
     }
 
     public String getPolniNaslov() {

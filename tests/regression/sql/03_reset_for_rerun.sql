@@ -1,0 +1,41 @@
+-- ============================================================================
+-- 03_reset_for_rerun.sql
+-- Ponastavitev odprtih (STATUS = 1) testnih racunov na Miza 58, 59, 60
+-- pred ponovnim zagonom testov. Zakljucenih (STATUS = 2/4) racunov NE brise!
+-- Kodna tabela: EE8MSWIN1250 (brez UTF-8 BOM)
+-- ============================================================================
+SET PAGESIZE 200 LINESIZE 250 FEEDBACK ON TRIMSPOOL ON VERIFY OFF
+
+PROMPT === ODPRTI TESTNI RACUNI PRED PONASTAVITVIJO (STATUS = 1) ===
+SELECT RACUN_ID, STATUS, MARKER, ZNESEK, KASIRAL, IZVOR_MOBILE_ID
+FROM RACGLAVA
+WHERE (MARKER LIKE 'Miza 58%' OR MARKER LIKE 'Miza 59%' OR MARKER LIKE 'Miza 60%')
+  AND STATUS = 1
+  AND KASIRAL = 9999
+ORDER BY RACUN_ID;
+
+DELETE FROM RACPLACI
+WHERE RACUN_ID IN (
+    SELECT RACUN_ID FROM RACGLAVA
+    WHERE (MARKER LIKE 'Miza 58%' OR MARKER LIKE 'Miza 59%' OR MARKER LIKE 'Miza 60%')
+      AND STATUS = 1
+      AND KASIRAL = 9999
+);
+
+DELETE FROM RACPOZIC
+WHERE RACUN_ID IN (
+    SELECT RACUN_ID FROM RACGLAVA
+    WHERE (MARKER LIKE 'Miza 58%' OR MARKER LIKE 'Miza 59%' OR MARKER LIKE 'Miza 60%')
+      AND STATUS = 1
+      AND KASIRAL = 9999
+);
+
+DELETE FROM RACGLAVA
+WHERE (MARKER LIKE 'Miza 58%' OR MARKER LIKE 'Miza 59%' OR MARKER LIKE 'Miza 60%')
+  AND STATUS = 1
+  AND KASIRAL = 9999;
+
+COMMIT;
+
+PROMPT [03] PONASTAVITEV ODPRTIH TESTNIH RACUNOV KONCANA.
+EXIT;

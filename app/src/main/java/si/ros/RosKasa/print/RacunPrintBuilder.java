@@ -165,11 +165,11 @@ public class RacunPrintBuilder {
         }
 
         // Datum in čas
-        Date docDate = new Date();
+        Date nowDate = new Date();
         SimpleDateFormat sdfDate = new SimpleDateFormat("dd.MM.yyyy", Locale.US);
         SimpleDateFormat sdfTime = new SimpleDateFormat("HH:mm:ss", Locale.US);
-        String datumStr = sdfDate.format(docDate);
-        String uraStr = sdfTime.format(docDate);
+        String datumStr = sdfDate.format(nowDate);
+        String uraStr = sdfTime.format(nowDate);
         if (racun.getDatum() != null && !racun.getDatum().trim().isEmpty()) {
             String raw = racun.getDatum().trim();
             if (raw.contains("T")) {
@@ -193,6 +193,7 @@ public class RacunPrintBuilder {
                 uraStr = raw;
             }
         }
+        Date docDate = parseRacunDateTime(datumStr, uraStr, nowDate);
         writeBlankLine(preview, printStream);
         writeLine(preview, printStream, "Datum " + datumStr + " Ura " + uraStr, false, false, globals);
 
@@ -212,21 +213,42 @@ public class RacunPrintBuilder {
                 }
             }
         }
+        boolean hasDavcnaSkupina = printData != null
+                && (!printData.getPartnerDSNaziv().isEmpty() || !printData.getPartnerDSDavcna().isEmpty());
         if (partnerNaziv.isEmpty() && printData != null && !printData.getPartnerNaziv().isEmpty()) {
             partnerNaziv = printData.getPartnerNaziv();
             partnerNaslov = printData.getPartnerNaslov();
             partnerDavcna = printData.getPartnerDavcna();
             if (stNarocilnice.isEmpty()) stNarocilnice = printData.getStNarocilnice();
         }
-        if (!partnerNaziv.isEmpty()) {
+        if (hasDavcnaSkupina) {
+            // Skladno z Delphi uPrintData.pas / PrintAll.pas: davčna številka se izpiše pri davčni skupini
+            partnerDavcna = "";
+        }
+        if (!partnerNaziv.isEmpty() || hasDavcnaSkupina) {
             writeBlankLine(preview, printStream);
             writeLine(preview, printStream, "Kupec", false, false, globals);
-            writeLine(preview, printStream, partnerNaziv, false, false, globals);
+            if (!partnerNaziv.isEmpty()) {
+                writeLine(preview, printStream, partnerNaziv, false, false, globals);
+            }
             if (!partnerNaslov.isEmpty()) {
                 writeLine(preview, printStream, partnerNaslov, false, false, globals);
             }
             if (!partnerDavcna.isEmpty()) {
                 writeLine(preview, printStream, partnerDavcna, false, false, globals);
+            }
+            if (hasDavcnaSkupina) {
+                if (!printData.getPartnerDSNaziv().isEmpty()) {
+                    writeLine(preview, printStream, printData.getPartnerDSNaziv(), false, false, globals);
+                }
+                if (!printData.getPartnerDSNaslov().isEmpty()) {
+                    writeLine(preview, printStream, printData.getPartnerDSNaslov(), false, false, globals);
+                }
+                if (!printData.getPartnerDSDavcna().isEmpty()) {
+                    writeLine(preview, printStream, printData.getPartnerDSDavcna(), false, false, globals);
+                }
+            } else if (printData != null && !printData.getPartnerDavcnaSkupina().isEmpty()) {
+                writeLine(preview, printStream, printData.getPartnerDavcnaSkupina(), false, false, globals);
             }
             if (!stNarocilnice.isEmpty()) {
                 writeLine(preview, printStream, "Št. naročilnice: " + stNarocilnice, false, false, globals);
@@ -464,12 +486,16 @@ public class RacunPrintBuilder {
                 writeLine(preview, printStream, formatKeyValue(plNaziv, formatCurrency(plZn), width), false, false, globals);
                 hasPrintedPayment = true;
 
-                // Gost hotela / soba
+                // Gost hotela / soba / skupina
                 if ((pl.getGostPrijavaId() != null && pl.getGostPrijavaId() > 0) || (pl.getHisCenikAi() != null && pl.getHisCenikAi() > 0)) {
                     if (printData != null && !printData.getPrijavaImeGosta().isEmpty()) {
                         String gostLine = printData.getPrijavaImeGosta();
                         if (gostLine.length() > width) gostLine = gostLine.substring(0, width);
                         writeLine(preview, printStream, gostLine, false, false, globals);
+                    } else if (printData != null && !printData.getHisCenikNaziv().isEmpty()) {
+                        String skupLine = printData.getHisCenikNaziv();
+                        if (skupLine.length() > width) skupLine = skupLine.substring(0, width);
+                        writeLine(preview, printStream, skupLine, false, false, globals);
                     }
                     needsSignature = true;
                 }
@@ -531,9 +557,11 @@ public class RacunPrintBuilder {
             // Preview: tekstualna oznaka QR kode
             preview.append("\n[QR KODA FISKALIZACIJE]\n");
 
-            // Tiskalnik: nativni ESC/POS QR ukazi
+            // Tiskalnik: nativni ESC/POS QR ukazi (Standard vs Star tip 2)
             if (!fursNumericCode.isEmpty()) {
-                byte[] qrBytes = FursQrHelper.kreirajEscQrKodoBytes(fursNumericCode);
+                byte[] qrBytes = (globals.getTipQrKode() == 2)
+                        ? FursQrHelper.kreirajStarQrKodoBytes(fursNumericCode)
+                        : FursQrHelper.kreirajEscQrKodoBytes(fursNumericCode);
                 try {
                     printStream.write(qrBytes);
                     printStream.write(0x0A);
@@ -541,7 +569,18 @@ public class RacunPrintBuilder {
             }
         }
 
-        // 9. NOGA RAČUNA (STREGEL, ZAHVALE)
+        // 9. NOGA RAČUNA (CRM, STREGEL, ZAHVALE)
+        if (printData != null && printData.getCrmIzpisLines() != null && !printData.getCrmIzpisLines().isEmpty()) {
+            writeBlankLine(preview, printStream);
+            writeLine(preview, printStream, makeDashes(width), false, false, globals);
+            for (String crmLine : printData.getCrmIzpisLines()) {
+                if (crmLine != null && !crmLine.trim().isEmpty()) {
+                    writeWrappedLine(preview, printStream, crmLine.trim(), width, globals);
+                }
+            }
+            writeLine(preview, printStream, makeDashes(width), false, false, globals);
+        }
+
         writeBlankLine(preview, printStream);
         String stregel = globals.getNazivStregelVasJe();
         if (stregel != null && !stregel.trim().isEmpty()) {
@@ -744,6 +783,40 @@ public class RacunPrintBuilder {
         StringBuilder sb = new StringBuilder(s);
         while (sb.length() < n) sb.append(' ');
         return sb.toString();
+    }
+
+    private static Date parseRacunDateTime(String datumStr, String uraStr, Date fallback) {
+        if (datumStr == null || datumStr.trim().isEmpty()) {
+            return fallback;
+        }
+        String cleanDate = datumStr.trim();
+        String cleanTime = (uraStr != null && !uraStr.trim().isEmpty()) ? uraStr.trim() : "00:00:00";
+        // Odstrani morebitne milisekunde ali časovni pas iz ure
+        int dotIdx = cleanTime.indexOf('.');
+        if (dotIdx > 0) cleanTime = cleanTime.substring(0, dotIdx);
+        int zIdx = cleanTime.indexOf('Z');
+        if (zIdx > 0) cleanTime = cleanTime.substring(0, zIdx);
+        int plusIdx = cleanTime.indexOf('+');
+        if (plusIdx > 0) cleanTime = cleanTime.substring(0, plusIdx);
+
+        String combined = cleanDate + " " + cleanTime;
+        String[] patterns = {
+                "dd.MM.yyyy HH:mm:ss",
+                "dd.MM.yyyy HH:mm",
+                "yyyy-MM-dd HH:mm:ss",
+                "yyyy-MM-dd HH:mm"
+        };
+        for (String pattern : patterns) {
+            try {
+                SimpleDateFormat sdf = new SimpleDateFormat(pattern, Locale.US);
+                sdf.setLenient(false);
+                Date parsed = sdf.parse(combined);
+                if (parsed != null) {
+                    return parsed;
+                }
+            } catch (Exception ignored) {}
+        }
+        return fallback;
     }
 
     private static String padLeft(String s, int n) {

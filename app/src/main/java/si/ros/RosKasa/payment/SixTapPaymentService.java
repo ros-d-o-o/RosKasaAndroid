@@ -26,6 +26,68 @@ public class SixTapPaymentService {
     public static final String OP_REFUND = "WPI_SVC_REFUND";
     public static final String OP_CANCEL_PAYMENT = "WPI_SVC_CANCEL_PAYMENT";
 
+    public interface SixTapLaunchCallback {
+        void onProceedLaunch();
+        void onRecoverConfirmed(SixTapResponse confirmedResp);
+        void onAutoCheckLastTransaction(String sessionId, int pendingRacunId);
+        void onBlocked(String message);
+    }
+
+    /**
+     * Blokada in 3-stopenjska eskalacija ob poskusu novega SixTap plačila z nerešeno transakcijo
+     * (skladno z Delphi uSixTapPayment.pas: 1=opozorilo, 2=auto LAST_TRANSACTION, 3=prisilni reset).
+     */
+    public static void prepareAndCheckPayment(Context context, int racunId, SixTapLaunchCallback callback) {
+        if (callback == null) return;
+        Globals g = Globals.getInstance();
+
+        // 1. Preveri, ali že obstaja na POS potrjena transakcija za ta račun
+        SixTapResponse confirmedResp = new SixTapResponse();
+        int[] confirmedState = new int[1];
+        if (PaymentRecoveryManager.tryGetConfirmedPOSTransaction(context, confirmedResp, confirmedState)) {
+            if (confirmedState[0] >= PaymentRecoveryManager.POS_STATE_POS_CONFIRMED
+                    && confirmedResp.getpRacunId() == racunId) {
+                g.vpisiKronologijo("SIXTAP BLOKADA NOVO PLACILO: R:" + racunId + " že potrjeno na POS (State:" + confirmedState[0] + "), zaključujem recovery.");
+                callback.onRecoverConfirmed(confirmedResp);
+                return;
+            }
+        }
+
+        // 2. Preveri nedokončano (recovery ali pending) SixTap transakcijo
+        PaymentRecoveryManager.PendingPaymentInfo info = PaymentRecoveryManager.tryGetRecoveryPayment(context);
+        if (!info.isValid()) {
+            info = PaymentRecoveryManager.tryGetPendingPayment(context);
+        }
+
+        if (info.isValid()) {
+            String pendingSessionId = info.getEffectiveSessionId();
+            int pendingRacunId = 0;
+            try {
+                pendingRacunId = Integer.parseInt(info.getEffectiveRacunId());
+            } catch (Exception ignored) {}
+
+            int retry = PaymentRecoveryManager.incrementRecoveryRetryCount(context);
+            if (retry == 1) {
+                g.vpisiKronologijo("SIXTAP ESKALACIJA 1 (OPOZORILO) R:" + racunId + " PendingR:" + pendingRacunId + " Session:" + pendingSessionId);
+                callback.onBlocked("Obstaja nedokončana Worldline Tap On transakcija za račun #" + pendingRacunId +
+                        ".\n\nUporabite tipko 'Tap On' za preverjanje statusa ali poskusite še enkrat za samodejno preverjanje.");
+                return;
+            } else if (retry == 2) {
+                g.vpisiKronologijo("SIXTAP ESKALACIJA 2 (AUTO LAST_TRANSACTION) R:" + racunId + " PendingR:" + pendingRacunId + " Session:" + pendingSessionId);
+                callback.onAutoCheckLastTransaction(pendingSessionId, pendingRacunId);
+                return;
+            } else {
+                g.vpisiKronologijo("SIXTAP ESKALACIJA 3 (PRISILNI RESET) R:" + racunId + " PendingR:" + pendingRacunId + " Session:" + pendingSessionId);
+                PaymentRecoveryManager.clearPendingPayment(context);
+                PaymentRecoveryManager.clearRecoveryPayment(context);
+                PaymentRecoveryManager.clearConfirmedPOSTransaction(context);
+                g.setSixtapintransaction(false);
+            }
+        }
+
+        callback.onProceedLaunch();
+    }
+
     public static Intent buildPaymentIntent(Context context, int racunId, int pozicijaId, BigDecimal amount,
                                             BigDecimal tipAmount, String operation, String mRef, String existingSessionId) {
         Globals g = Globals.getInstance();
@@ -81,6 +143,32 @@ public class SixTapPaymentService {
         g.setZadnjaSixPozicijaId(pozicijaId);
 
         return intent;
+    }
+
+    private static String optStringCI(JSONObject obj, String key, String defVal) {
+        if (obj == null || key == null) return defVal;
+        if (obj.has(key)) return obj.optString(key, defVal);
+        java.util.Iterator<String> it = obj.keys();
+        while (it.hasNext()) {
+            String k = it.next();
+            if (key.equalsIgnoreCase(k)) {
+                return obj.optString(k, defVal);
+            }
+        }
+        return defVal;
+    }
+
+    private static JSONObject optObjectCI(JSONObject obj, String key) {
+        if (obj == null || key == null) return null;
+        if (obj.has(key)) return obj.optJSONObject(key);
+        java.util.Iterator<String> it = obj.keys();
+        while (it.hasNext()) {
+            String k = it.next();
+            if (key.equalsIgnoreCase(k)) {
+                return obj.optJSONObject(k);
+            }
+        }
+        return null;
     }
 
     private static String buildWpiJsonRequest(int amountCents, int tipCents, int racunId, String mRef, String format, String op) {
@@ -145,46 +233,46 @@ public class SixTapPaymentService {
 
         try {
             JSONObject root = new JSONObject(jsonString);
-            resp.setResult(root.optString("result", ""));
-            resp.setErrorCondition(root.optString("errorCondition", ""));
-            resp.setRemark(root.optString("remark", ""));
-            resp.setTimestamp(root.optString("timestamp", ""));
-            resp.setCurrency(root.optString("currency", "EUR"));
-            resp.setAuthorizedAmount(root.optString("authorizedAmount", ""));
-            resp.setTipAmount(root.optString("tipAmount", ""));
-            resp.setBrandName(root.optString("brandName", "").replace("WPI_BRAND_NAME_", ""));
-            resp.setCustomerLanguage(root.optString("customerLanguage", ""));
-            resp.setApplicationIdentifier(root.optString("applicationIdentifier", ""));
-            resp.setApplicationLabel(root.optString("applicationLabel", ""));
-            resp.setPaymentSolutionReference(root.optString("paymentSolutionReference", ""));
-            resp.setReference(root.optString("reference", ""));
+            resp.setResult(optStringCI(root, "result", ""));
+            resp.setErrorCondition(optStringCI(root, "errorCondition", ""));
+            resp.setRemark(optStringCI(root, "remark", ""));
+            resp.setTimestamp(optStringCI(root, "timestamp", ""));
+            resp.setCurrency(optStringCI(root, "currency", "EUR"));
+            resp.setAuthorizedAmount(optStringCI(root, "authorizedAmount", ""));
+            resp.setTipAmount(optStringCI(root, "tipAmount", ""));
+            resp.setBrandName(optStringCI(root, "brandName", "").replace("WPI_BRAND_NAME_", ""));
+            resp.setCustomerLanguage(optStringCI(root, "customerLanguage", ""));
+            resp.setApplicationIdentifier(optStringCI(root, "applicationIdentifier", ""));
+            resp.setApplicationLabel(optStringCI(root, "applicationLabel", ""));
+            resp.setPaymentSolutionReference(optStringCI(root, "paymentSolutionReference", ""));
+            resp.setReference(optStringCI(root, "reference", ""));
 
-            // 1. Luščenje client in merchant iz strukture receipt / formatted
+            // 1. Luščenje client in merchant iz strukture receipt / formatted (case-insensitive)
             String clientStr = "";
             String merchantStr = "";
 
-            JSONObject receiptObj = root.optJSONObject("receipt");
+            JSONObject receiptObj = optObjectCI(root, "receipt");
             if (receiptObj != null) {
-                JSONObject formattedObj = receiptObj.optJSONObject("formatted");
+                JSONObject formattedObj = optObjectCI(receiptObj, "formatted");
                 if (formattedObj != null) {
-                    clientStr = formattedObj.optString("client", "");
-                    merchantStr = formattedObj.optString("merchant", "");
+                    clientStr = optStringCI(formattedObj, "client", "");
+                    merchantStr = optStringCI(formattedObj, "merchant", "");
                 } else {
-                    clientStr = receiptObj.optString("client", "");
-                    merchantStr = receiptObj.optString("merchant", "");
+                    clientStr = optStringCI(receiptObj, "client", "");
+                    merchantStr = optStringCI(receiptObj, "merchant", "");
                 }
             } else {
-                String receiptRaw = root.optString("receipt", "");
+                String receiptRaw = optStringCI(root, "receipt", "");
                 if (receiptRaw.startsWith("{")) {
                     try {
                         JSONObject parsedReceipt = new JSONObject(receiptRaw);
-                        JSONObject formattedObj = parsedReceipt.optJSONObject("formatted");
+                        JSONObject formattedObj = optObjectCI(parsedReceipt, "formatted");
                         if (formattedObj != null) {
-                            clientStr = formattedObj.optString("client", "");
-                            merchantStr = formattedObj.optString("merchant", "");
+                            clientStr = optStringCI(formattedObj, "client", "");
+                            merchantStr = optStringCI(formattedObj, "merchant", "");
                         } else {
-                            clientStr = parsedReceipt.optString("client", "");
-                            merchantStr = parsedReceipt.optString("merchant", "");
+                            clientStr = optStringCI(parsedReceipt, "client", "");
+                            merchantStr = optStringCI(parsedReceipt, "merchant", "");
                         }
                     } catch (Exception ignored) {}
                 } else if (!receiptRaw.isEmpty()) {
@@ -193,18 +281,18 @@ public class SixTapPaymentService {
             }
 
             if (clientStr.isEmpty()) {
-                JSONObject formattedObj = root.optJSONObject("formatted");
+                JSONObject formattedObj = optObjectCI(root, "formatted");
                 if (formattedObj != null) {
-                    clientStr = formattedObj.optString("client", "");
-                    merchantStr = formattedObj.optString("merchant", "");
+                    clientStr = optStringCI(formattedObj, "client", "");
+                    merchantStr = optStringCI(formattedObj, "merchant", "");
                 }
             }
 
             if (clientStr.isEmpty()) {
-                clientStr = root.optString("client", "");
+                clientStr = optStringCI(root, "client", "");
             }
             if (merchantStr.isEmpty()) {
-                merchantStr = root.optString("merchant", "");
+                merchantStr = optStringCI(root, "merchant", "");
             }
 
             if (merchantStr.isEmpty()) {

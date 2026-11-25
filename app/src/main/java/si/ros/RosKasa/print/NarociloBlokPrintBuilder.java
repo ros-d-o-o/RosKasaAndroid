@@ -32,11 +32,28 @@ public class NarociloBlokPrintBuilder {
 
         for (PozicijaTp poz : racun.getRacPozic()) {
             if (poz == null || poz.isRowDeleted()) continue;
-            // Če ima določen kuhinjaId > 0, gre v Blok 2 (kuhinja), sicer v Blok 1 (šank/točilnica)
-            if (poz.getKuhinjaId() != null && poz.getKuhinjaId() > 0) {
+            // Ločitev Blok 1 vs Blok 2 po tblCenik.IZPIS_NAROCILA (1 vs >1), skladno z Delphi PrintNarocila
+            int izpisNar = 0;
+            if (poz.getNivo4Id() != null && poz.getNivo4Id() > 0) {
+                for (si.ros.RosKasa.ui.CenikListAdapter.CenikItem ci : globals.getCachedCenik()) {
+                    if (ci != null && ci.nivo4Id == poz.getNivo4Id()) {
+                        izpisNar = ci.izpisNarocila;
+                        break;
+                    }
+                }
+            }
+            if (izpisNar == 1) {
+                blok1Items.add(poz);
+            } else if (izpisNar > 1) {
                 blok2Items.add(poz);
             } else {
-                blok1Items.add(poz);
+                // Fallback če IZPIS_NAROCILA ni nastavljen: kuhinja vs točilnica po IZVOR_STRM_ID
+                int kuhId = globals.getKuhinjaId() != null ? globals.getKuhinjaId() : 0;
+                if (kuhId > 0 && poz.getIzvorStrmId() != null && poz.getIzvorStrmId() == kuhId) {
+                    blok2Items.add(poz);
+                } else {
+                    blok1Items.add(poz);
+                }
             }
         }
 

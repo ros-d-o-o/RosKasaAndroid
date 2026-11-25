@@ -1,0 +1,57 @@
+[
+  {
+    "scenario": "TC01_SIMPLE_GOTOVINA",
+    "racun_id": 61991,
+    "status": "DONE"
+  },
+  {
+    "scenario": "TC02_PAKET_KRED_ROCNO",
+    "racun_id": 61992,
+    "status": "DONE"
+  },
+  {
+    "scenario": "TC03",
+    "status": "ERROR",
+    "error": "Timeout waiting for positive racunId after POST; last state={'racunId': 0, 'marker': 'Miza 58', 'tabIndex': 0, 'activeTab': 'TabCenik', 'pozicCount': 0, 'placiCount': 0, 'racGlavaCount': 3, 'layoutEPVisible': False, 'partnerVisible': False, 'frmPartnerVisible': False, 'partnerCount': 0, 'sobeVisible': False, 'zdruziVisible': False, 'splitVisible': False}"
+  },
+  {
+    "scenario": "TC04_DOBAVNICA_ROS",
+    "racun_id": 61993,
+    "partner_id": 41125,
+    "status": "DONE"
+  },
+  {
+    "scenario": "TC05_DOBAVNICA_PRVA_OSEBNA_ZAVAROVALNICA",
+    "racun_id": 61994,
+    "partner_id": 654330,
+    "status": "DONE"
+  },
+  {
+    "scenario": "TC06_POPUST_99_CELOTEN_RACUN",
+    "racun_id": 61995,
+    "status": "DONE"
+  },
+  {
+    "scenario": "TC07_POPUST_1_POZICIJA",
+    "racun_id": 61996,
+    "status": "DONE"
+  },
+  {
+    "scenario": "TC08_ZDRUZI_IN_SPLIT",
+    "racun_a": 61997,
+    "racun_b": 61998,
+    "status": "DONE"
+  },
+  {
+    "scenario": "TC09_STORNO_Z_NOVIM_RACUNOM",
+    "source_racun_id": 61991,
+    "create_new": true,
+    "status": "DONE"
+  },
+  {
+    "scenario": "TC10_STORNO_BREZ_NOVEGA_RACUNA",
+    "source_racun_id": 61992,
+    "create_new": false,
+    "status": "DONE"
+  }
+]

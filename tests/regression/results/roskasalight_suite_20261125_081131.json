@@ -1,0 +1,14 @@
+[
+  {
+    "scenario": "TC04_DOBAVNICA_ROS",
+    "racun_id": 61893,
+    "partner_id": 41125,
+    "status": "DONE"
+  },
+  {
+    "scenario": "TC08_ZDRUZI_IN_SPLIT",
+    "racun_a": 61894,
+    "racun_b": 61895,
+    "status": "DONE"
+  }
+]

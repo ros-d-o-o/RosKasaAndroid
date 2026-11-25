@@ -237,9 +237,20 @@ public class Popust99Dialog {
                     }
                 }
 
+                int maxPop = Globals.getInstance().getMaxPopOseba();
+                if (maxPop > 0 && koncenProcent.compareTo(BigDecimal.valueOf(maxPop)) > 0) {
+                    Toast.makeText(context, "Maksimalni dovoljeni popust za vašo osebo je " + maxPop + "%!", Toast.LENGTH_LONG).show();
+                    return;
+                }
+
                 dialog.dismiss();
                 if (listener != null) {
-                    listener.onPopustApplied(koncenProcent, koncenZnesek);
+                    if (isProcentMode[0]) {
+                        listener.onPopustApplied(koncenProcent, koncenZnesek);
+                    } else {
+                        // Pri vnosu v EUR podamo procent = 0, da se znesek porazdeli proporcionalno brez zaokrožitvenih odstopanj
+                        listener.onPopustApplied(BigDecimal.ZERO, koncenZnesek);
+                    }
                 }
             } catch (Exception e) {
                 Toast.makeText(context, "Neveljavna vrednost: " + e.getMessage(), Toast.LENGTH_SHORT).show();

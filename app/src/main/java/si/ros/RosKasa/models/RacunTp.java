@@ -43,6 +43,7 @@ public class RacunTp {
     private String lokator = "";
     private Integer partnerId;
     private Integer akcijaId;
+    private String bkartaId = "";
 
     private List<PozicijaTp> racPozic = new ArrayList<>();
     private List<PlaciloTp> racPlaci = new ArrayList<>();
@@ -97,6 +98,8 @@ public class RacunTp {
         copy.dnId = this.dnId;
         copy.lokator = this.lokator;
         copy.partnerId = this.partnerId;
+        copy.akcijaId = this.akcijaId;
+        copy.bkartaId = this.bkartaId;
 
         if (this.originalObject != null) {
             copy.originalObject = this.originalObject.deepCopy();
@@ -162,17 +165,22 @@ public class RacunTp {
     }
 
     public void preracunajPlacano() {
+        if (racPlaci == null || racPlaci.isEmpty()) {
+            // Ohranimo RACGLAVA.PLACANO, če strežnik vrne prazen RACPLACI
+            if (this.placano == null) {
+                this.placano = BigDecimal.ZERO;
+            }
+            return;
+        }
         BigDecimal sumPlacano = BigDecimal.ZERO;
-        if (racPlaci != null && !racPlaci.isEmpty()) {
-            for (PlaciloTp pl : racPlaci) {
-                if (pl != null && !pl.isRowDeleted()) {
-                    // placilo_id == 99 is a discount, delni_znesek = 0, does not count towards placano
-                    if (pl.getPlaciloId() != 99) {
-                        BigDecimal amt = (pl.getDelniZnesek() != null && pl.getDelniZnesek().compareTo(BigDecimal.ZERO) > 0)
-                                ? pl.getDelniZnesek()
-                                : (pl.getZnesek() != null ? pl.getZnesek() : BigDecimal.ZERO);
-                        sumPlacano = sumPlacano.add(amt);
-                    }
+        for (PlaciloTp pl : racPlaci) {
+            if (pl != null && !pl.isRowDeleted()) {
+                // placilo_id == 99 is a discount, delni_znesek = 0, does not count towards placano
+                if (pl.getPlaciloId() != 99) {
+                    BigDecimal amt = (pl.getDelniZnesek() != null && pl.getDelniZnesek().compareTo(BigDecimal.ZERO) != 0)
+                            ? pl.getDelniZnesek()
+                            : (pl.getZnesek() != null ? pl.getZnesek() : BigDecimal.ZERO);
+                    sumPlacano = sumPlacano.add(amt);
                 }
             }
         }
@@ -323,5 +331,8 @@ public class RacunTp {
 
     public Integer getAkcijaId() { return akcijaId; }
     public void setAkcijaId(Integer akcijaId) { this.akcijaId = akcijaId; }
+
+    public String getBkartaId() { return bkartaId; }
+    public void setBkartaId(String bkartaId) { this.bkartaId = bkartaId != null ? bkartaId : ""; }
 }
 

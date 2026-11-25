@@ -9,6 +9,8 @@ public class KartprijTp {
     private String nazivStrm = "";
     private String tipKart = ""; // "X" (v odhodu), "S" (Blokada HK)
     private String obratNaziv = "";
+    private int hisCenikAi = 0;
+    private String hisCenikNaziv = "";
 
     public KartprijTp() {}
 
@@ -82,5 +84,21 @@ public class KartprijTp {
 
     public boolean isVOdhodu() {
         return "X".equalsIgnoreCase(tipKart);
+    }
+
+    public int getHisCenikAi() {
+        return hisCenikAi;
+    }
+
+    public void setHisCenikAi(int hisCenikAi) {
+        this.hisCenikAi = hisCenikAi;
+    }
+
+    public String getHisCenikNaziv() {
+        return hisCenikNaziv != null ? hisCenikNaziv : "";
+    }
+
+    public void setHisCenikNaziv(String hisCenikNaziv) {
+        this.hisCenikNaziv = hisCenikNaziv != null ? hisCenikNaziv : "";
     }
 }

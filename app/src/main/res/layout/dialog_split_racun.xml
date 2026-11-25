@@ -71,13 +71,81 @@
             android:visibility="gone" />
     </FrameLayout>
 
+    <!-- Izbira ciljnega računa R1..R5 -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:layout_marginTop="8dp"
+        android:weightSum="5">
+
+        <Button
+            android:id="@+id/btnSplitR1"
+            android:layout_width="0dp"
+            android:layout_height="38dp"
+            android:layout_weight="1"
+            android:text="R1"
+            android:textSize="11sp"
+            android:textColor="#FFFFFF"
+            android:backgroundTint="#1565C0"
+            android:padding="2dp"
+            android:layout_marginEnd="3dp" />
+
+        <Button
+            android:id="@+id/btnSplitR2"
+            android:layout_width="0dp"
+            android:layout_height="38dp"
+            android:layout_weight="1"
+            android:text="R2"
+            android:textSize="11sp"
+            android:textColor="#FFFFFF"
+            android:backgroundTint="#455A64"
+            android:padding="2dp"
+            android:layout_marginEnd="3dp" />
+
+        <Button
+            android:id="@+id/btnSplitR3"
+            android:layout_width="0dp"
+            android:layout_height="38dp"
+            android:layout_weight="1"
+            android:text="R3"
+            android:textSize="11sp"
+            android:textColor="#FFFFFF"
+            android:backgroundTint="#455A64"
+            android:padding="2dp"
+            android:layout_marginEnd="3dp" />
+
+        <Button
+            android:id="@+id/btnSplitR4"
+            android:layout_width="0dp"
+            android:layout_height="38dp"
+            android:layout_weight="1"
+            android:text="R4"
+            android:textSize="11sp"
+            android:textColor="#FFFFFF"
+            android:backgroundTint="#455A64"
+            android:padding="2dp"
+            android:layout_marginEnd="3dp" />
+
+        <Button
+            android:id="@+id/btnSplitR5"
+            android:layout_width="0dp"
+            android:layout_height="38dp"
+            android:layout_weight="1"
+            android:text="R5"
+            android:textSize="11sp"
+            android:textColor="#FFFFFF"
+            android:backgroundTint="#455A64"
+            android:padding="2dp" />
+    </LinearLayout>
+
     <!-- Novi deljeni račun -->
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:orientation="horizontal"
         android:background="#1565C0"
-        android:layout_marginTop="8dp"
+        android:layout_marginTop="4dp"
         android:padding="6dp">
 
         <TextView

@@ -94,4 +94,33 @@ public class FursQrHelper {
             return new byte[0];
         }
     }
+
+    /**
+     * Generira Star Line Mode ESC/POS ukaze (ESC GS y) za izris QR kode (TIPQRKODE = 2).
+     */
+    public static byte[] kreirajStarQrKodoBytes(String qrData) {
+        if (qrData == null || qrData.isEmpty()) {
+            return new byte[0];
+        }
+        try {
+            ByteArrayOutputStream baos = new ByteArrayOutputStream();
+            // 1. Model 2: ESC GS y S 0 02
+            baos.write(new byte[]{0x1B, 0x1D, 0x79, 0x53, 0x30, 0x02});
+            // 2. Error correction level M: ESC GS y S 1 01
+            baos.write(new byte[]{0x1B, 0x1D, 0x79, 0x53, 0x31, 0x01});
+            // 3. Cell size 4: ESC GS y S 2 04
+            baos.write(new byte[]{0x1B, 0x1D, 0x79, 0x53, 0x32, 0x04});
+            // 4. Podatki: ESC GS y D 1 00 nL nH <data>
+            byte[] dataBytes = qrData.getBytes(StandardCharsets.US_ASCII);
+            byte nL = (byte) (dataBytes.length % 256);
+            byte nH = (byte) (dataBytes.length / 256);
+            baos.write(new byte[]{0x1B, 0x1D, 0x79, 0x44, 0x31, 0x00, nL, nH});
+            baos.write(dataBytes);
+            // 5. Tisk: ESC GS y P
+            baos.write(new byte[]{0x1B, 0x1D, 0x79, 0x50});
+            return baos.toByteArray();
+        } catch (Exception e) {
+            return new byte[0];
+        }
+    }
 }

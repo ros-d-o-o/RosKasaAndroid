@@ -107,7 +107,7 @@ public class PartnerVnosDialog {
                 query = etDavcna.getText().toString().trim();
             }
 
-            if (query.length() == 1) {
+            if (query.length() < 2) {
                 Toast.makeText(context, "Vnesite vsaj 2 znaka za iskanje partnerja!", Toast.LENGTH_SHORT).show();
                 return;
             }
@@ -174,7 +174,29 @@ public class PartnerVnosDialog {
                                 tvEmptyPartnerMessage.setText("Ni najdenih partnerjev za: " + searchQuery);
                                 tvEmptyPartnerMessage.setVisibility(View.VISIBLE);
                             }
-                            Toast.makeText(context, "Ni najdenih partnerjev za: " + searchQuery, Toast.LENGTH_SHORT).show();
+                            // Če lokalno ni zadetkov in je vpisana EU DDV številka (2 črki + števke), preveri VIES
+                            String candidateVat = (etDavcna.getText() != null && !etDavcna.getText().toString().trim().isEmpty())
+                                    ? etDavcna.getText().toString().trim() : searchQuery;
+                            String cleanVat = candidateVat.replaceAll("[\\s\\-.]", "").toUpperCase(java.util.Locale.ROOT);
+                            if (cleanVat.length() >= 4 && Character.isLetter(cleanVat.charAt(0)) && Character.isLetter(cleanVat.charAt(1))) {
+                                pbLoading.setVisibility(View.VISIBLE);
+                                executor.execute(() -> {
+                                    si.ros.RosKasa.soap.ViesVatClient.ViesResult vr = si.ros.RosKasa.soap.ViesVatClient.checkVat(cleanVat);
+                                    mainHandler.post(() -> {
+                                        pbLoading.setVisibility(View.GONE);
+                                        if (vr.valid) {
+                                            if (!vr.name.isEmpty()) etNaziv.setText(vr.name);
+                                            if (!vr.address.isEmpty()) etNaslov.setText(vr.address);
+                                            etDavcna.setText(vr.countryCode + vr.vatNumber);
+                                            Toast.makeText(context, "VIES: Veljaven EU DDV zavezanec (" + vr.name + ")", Toast.LENGTH_LONG).show();
+                                        } else {
+                                            Toast.makeText(context, "VIES: " + vr.errorMessage, Toast.LENGTH_LONG).show();
+                                        }
+                                    });
+                                });
+                            } else {
+                                // [DEBUG-TOAST] Toast.makeText(context, "Ni najdenih partnerjev za: " + searchQuery, Toast.LENGTH_SHORT).show();
+                            }
                         }
                     });
                 } catch (Exception e) {
@@ -203,8 +225,10 @@ public class PartnerVnosDialog {
             return false;
         });
 
-        // Ob odprtju dialoga vedno naložimo listo partnerjev (tudi ko je storitevId=0 ali null / dobavnica placilo_id=12)
-        mainHandler.post(performSearch);
+        // Ne izvajamo iskanja vnaprej — uporabnik mora vnesti vsaj 2 znaka (razen če je predizpolnjen naziv >= 2 znaka)
+        if (initNaziv != null && initNaziv.trim().length() >= 2) {
+            mainHandler.post(performSearch);
+        }
 
         btnCancel.setOnClickListener(v -> dialog.dismiss());
 
@@ -215,10 +239,17 @@ public class PartnerVnosDialog {
             String stNaroc = etNarocilnica.getText() != null ? etNarocilnica.getText().toString().trim() : "";
 
             // Delphi FormPartner.pas kontrole:
-            // ((edPartnernaziv.Text.Length>=3) and (edPartnerNaslov.Text.Length>4) and (edPartnerDavcna.Text.Length>6)) or selectedPartnerId > 0 or storitevId == 8
+            // Reprezentanca (TIP_PARTNER = 5): obvezen izbor partnerja iz baze (brez ročnega vnosa)
+            if (storitevId == 5 && selectedPartnerId[0] <= 0) {
+                Toast.makeText(context, "Za reprezentanco morate izbrati partnerja s seznama iz baze!", Toast.LENGTH_LONG).show();
+                return;
+            }
+
+            // Interni seznami (8, 31, 90) dovoljujejo naziv >= 3 ali izbor iz baze; sicer polni ročni vnos
+            boolean isInternalList = (storitevId == 8 || storitevId == 31 || storitevId == 90);
             boolean isDataValid = (naziv.length() >= 3 && naslov.length() > 4 && davcna.length() > 6)
                     || (selectedPartnerId[0] > 0)
-                    || (storitevId == 8 && naziv.length() >= 3);
+                    || (isInternalList && naziv.length() >= 3);
 
             if (!isDataValid) {
                 Toast.makeText(context, "Podatki ne ustrezajo! Zahtevan je vnos: Naziv (vsaj 3 znaki), Naslov (vsaj 5 znakov) in Davčna št. (vsaj 7 znakov).", Toast.LENGTH_LONG).show();

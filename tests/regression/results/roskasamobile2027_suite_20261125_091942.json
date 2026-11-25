@@ -1,0 +1,55 @@
+[
+  {
+    "scenario": "TC01_SIMPLE_GOTOVINA",
+    "racun_id": 61946,
+    "status": "DONE"
+  },
+  {
+    "scenario": "TC02",
+    "status": "ERROR",
+    "error": "Payment button 'KRED. K ROCNO' (id=5) not found"
+  },
+  {
+    "scenario": "TC03_LESTVICA_GOST_HOTELA",
+    "racun_id": 61947,
+    "status": "DONE"
+  },
+  {
+    "scenario": "TC04_DOBAVNICA_ROS",
+    "racun_id": 61948,
+    "partner_id": 41125,
+    "status": "DONE"
+  },
+  {
+    "scenario": "TC05_DOBAVNICA_PRVA_OSEBNA_ZAVAROVALNICA",
+    "racun_id": 61949,
+    "partner_id": 654330,
+    "status": "DONE"
+  },
+  {
+    "scenario": "TC06_POPUST_99_CELOTEN_RACUN",
+    "racun_id": 61950,
+    "status": "DONE"
+  },
+  {
+    "scenario": "TC07_POPUST_1_POZICIJA",
+    "racun_id": 61951,
+    "status": "DONE"
+  },
+  {
+    "scenario": "TC08_ZDRUZI_IN_SPLIT",
+    "racun_a": 61952,
+    "racun_b": 61953,
+    "status": "DONE"
+  },
+  {
+    "scenario": "TC09",
+    "status": "ERROR",
+    "error": "Tool error in call_method: {'content': [{'type': 'text', 'text': '{\"id\":1,\"ok\":false,\"error\":{\"code\":-32603,\"message\":\"call_method SelectRacun raised Exception: Racun not found in LvRacGlava: 61946\"}}'}], 'isError': True}"
+  },
+  {
+    "scenario": "TC10",
+    "status": "ERROR",
+    "error": "TC10 requires TC02_racun_id"
+  }
+]

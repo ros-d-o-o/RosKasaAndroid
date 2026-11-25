@@ -1,0 +1,54 @@
+[
+  {
+    "scenario": "TC01_SIMPLE_GOTOVINA",
+    "racun_id": 61940,
+    "status": "DONE"
+  },
+  {
+    "scenario": "TC02",
+    "status": "ERROR",
+    "error": "Payment button 'KRED. K ROCNO' not found"
+  },
+  {
+    "scenario": "TC03",
+    "status": "ERROR",
+    "error": "Tool error in click: {'content': [{'type': 'text', 'text': '{\"id\":1,\"ok\":false,\"error\":{\"code\":-32004,\"message\":\"main thread did not respond within 5000 ms: the command started and is still running on the main thread - often it waits in a modal dialog or form that it opened (dismiss_dialog closes a native dialog). It was not lost: do not send it again.\",\"data\":{\"started\":true}}}'}], 'isError': True}"
+  },
+  {
+    "scenario": "TC04_DOBAVNICA_ROS",
+    "racun_id": 61941,
+    "partner_id": 41125,
+    "status": "DONE"
+  },
+  {
+    "scenario": "TC05_DOBAVNICA_PRVA_OSEBNA_ZAVAROVALNICA",
+    "racun_id": 61942,
+    "partner_id": 654330,
+    "status": "DONE"
+  },
+  {
+    "scenario": "TC06_POPUST_99_CELOTEN_RACUN",
+    "racun_id": 61943,
+    "status": "DONE"
+  },
+  {
+    "scenario": "TC07",
+    "status": "ERROR",
+    "error": "Tool error in call_method: {'content': [{'type': 'text', 'text': '{\"id\":1,\"ok\":false,\"error\":{\"code\":-32004,\"message\":\"main thread did not respond within 5000 ms: the command started and is still running on the main thread - often it waits in a modal dialog or form that it opened (dismiss_dialog closes a native dialog). It was not lost: do not send it again.\",\"data\":{\"started\":true}}}'}], 'isError': True}"
+  },
+  {
+    "scenario": "TC08",
+    "status": "ERROR",
+    "error": "Tool error in click: {'content': [{'type': 'text', 'text': '{\"id\":1,\"ok\":false,\"error\":{\"code\":-32004,\"message\":\"main thread did not respond within 5000 ms: the command started and is still running on the main thread - often it waits in a modal dialog or form that it opened (dismiss_dialog closes a native dialog). It was not lost: do not send it again.\",\"data\":{\"started\":true}}}'}], 'isError': True}"
+  },
+  {
+    "scenario": "TC09",
+    "status": "ERROR",
+    "error": "Tool error in click: {'content': [{'type': 'text', 'text': '{\"id\":1,\"ok\":false,\"error\":{\"code\":-32001,\"message\":\"no component matches frmKasaMobile.btnIzpisaniRacuni\"}}'}], 'isError': True}"
+  },
+  {
+    "scenario": "TC10",
+    "status": "ERROR",
+    "error": "TC10 requires TC02_racun_id"
+  }
+]

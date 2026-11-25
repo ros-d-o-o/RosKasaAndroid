@@ -27,10 +27,15 @@ public class QuickKeyAdapter extends RecyclerView.Adapter<QuickKeyAdapter.ViewHo
         public String categoryGroup;
         public Integer categoryTargetId;
         public double price;
+        public int tipkaId;
         public int nivo4Id;
         public int nacinProdaje;
         public double polnjenje;
         public int paket;
+        public double ep;
+        public Integer barva;
+        public Integer dodatekId;
+        public int kolicina;
 
         public QuickKey(String title, boolean isCategory, boolean isBack, String categoryGroup, double price) {
             this.title = title;
@@ -42,6 +47,10 @@ public class QuickKeyAdapter extends RecyclerView.Adapter<QuickKeyAdapter.ViewHo
             this.nacinProdaje = 0;
             this.polnjenje = 1.0;
             this.paket = 0;
+            this.ep = 1.0;
+            this.barva = null;
+            this.dodatekId = null;
+            this.kolicina = 1;
         }
     }
 
@@ -90,11 +99,22 @@ public class QuickKeyAdapter extends RecyclerView.Adapter<QuickKeyAdapter.ViewHo
 
         holder.btnKey.setEnabled(true);
         holder.btnKey.setVisibility(View.VISIBLE);
-        holder.btnKey.setText(key.title);
+        String displayTitle = key.title;
+        if (!key.isBack && !key.isCategory && key.ep > 0 && Math.abs(key.ep - 1.0) > 1e-6) {
+            String epStr = String.valueOf(key.ep).replace('.', ',');
+            if (epStr.endsWith(",0")) epStr = epStr.substring(0, epStr.length() - 2);
+            displayTitle = key.title + " [" + epStr + "]";
+        }
+        holder.btnKey.setText(displayTitle);
 
         if (key.isBack) {
             holder.btnKey.setBackgroundColor(Color.parseColor("#B71C1C")); // Dark Red for Back
             holder.btnKey.setTextColor(Color.WHITE);
+        } else if (key.barva != null && key.barva != 0) {
+            int androidColor = convertDelphiColor(key.barva);
+            holder.btnKey.setBackgroundColor(androidColor);
+            double lum = 0.299 * Color.red(androidColor) + 0.587 * Color.green(androidColor) + 0.114 * Color.blue(androidColor);
+            holder.btnKey.setTextColor(lum > 155 ? Color.BLACK : Color.WHITE);
         } else if (key.isCategory) {
             holder.btnKey.setBackgroundColor(Color.parseColor("#555555")); // Grey for Category
             holder.btnKey.setTextColor(Color.WHITE);
@@ -111,6 +131,18 @@ public class QuickKeyAdapter extends RecyclerView.Adapter<QuickKeyAdapter.ViewHo
     @Override
     public int getItemCount() {
         return keys.size();
+    }
+
+    private static int convertDelphiColor(int colorVal) {
+        // Če ima že nastavljen alpha kanal (npr. ARGB iz FMX), ga uporabimo neposredno
+        if ((colorVal & 0xFF000000) != 0) {
+            return colorVal;
+        }
+        // Sicer je VCL TColor v formatu 0x00BBGGRR
+        int r = colorVal & 0xFF;
+        int g = (colorVal >> 8) & 0xFF;
+        int b = (colorVal >> 16) & 0xFF;
+        return Color.rgb(r, g, b);
     }
 
     static class ViewHolder extends RecyclerView.ViewHolder {

@@ -119,6 +119,14 @@ public class VnosCeneDialog {
                     price = new BigDecimal(valStr);
                 } catch (Exception ignored) {}
             }
+            if (!allowNegative && price.compareTo(BigDecimal.ZERO) <= 0) {
+                android.widget.Toast.makeText(context, "Cena mora biti večja od 0!", android.widget.Toast.LENGTH_SHORT).show();
+                return;
+            }
+            if (allowNegative && price.compareTo(BigDecimal.ZERO) == 0) {
+                android.widget.Toast.makeText(context, "Vnesite ceno različno od 0!", android.widget.Toast.LENGTH_SHORT).show();
+                return;
+            }
             dialog.dismiss();
             if (listener != null) listener.onPriceEntered(price);
         });

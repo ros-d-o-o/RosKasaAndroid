@@ -1,16 +1,19 @@
 package si.ros.RosKasa.print;
 
+import android.Manifest;
 import android.app.Activity;
 import android.bluetooth.BluetoothAdapter;
 import android.bluetooth.BluetoothDevice;
 import android.bluetooth.BluetoothSocket;
 import android.content.Context;
 import android.content.ContextWrapper;
+import android.os.Build;
 import android.os.Handler;
 import android.os.Looper;
 import android.util.Log;
 
 import androidx.appcompat.app.AlertDialog;
+import androidx.core.app.ActivityCompat;
 
 import java.io.OutputStream;
 import java.math.BigDecimal;
@@ -62,8 +65,38 @@ public class PrintDataHandler {
                     return;
                 }
 
+                Globals globals = Globals.getInstance();
+                AppPreferences prefs = new AppPreferences(context);
+                String serverUrl = prefs.getServerUrl();
+                String token = prefs.getToken();
+                if (serverUrl == null || serverUrl.isEmpty()) serverUrl = globals.getServerUrl();
+                if (token == null || token.isEmpty()) token = globals.getToken();
+
+                // 1. KASKADA PRIDOBIVANJA PODATKOV (Pre-Print Retrieval) — VEDNO pred Bluetoothom,
+                // da se RACIZPISAN vedno zapiše v bazo tudi ob napaki Bluetooth tiskalnika!
+                globals.vpisiKronologijo("PrintDataHandler: Začetek priprave podatkov za R:" + racun.getRacunId());
+                PrintDataWS printData = retrievePrintData(serverUrl, token, racun, globals);
+
+                int zaPrintKopij = printData.getZaPrintStKopij();
+                int zacStKopij = printData.getZacStKopij();
+                int firstKopijaOznaka = (zacStKopij > 0) ? (zacStKopij + 1) : 0;
+                RacunPrintBuilder.ReceiptResult firstRacResult = RacunPrintBuilder.buildReceipt(racun, globals, firstKopijaOznaka, printData);
+                String textPreviewZaServer = firstRacResult.getTextPreview();
+
+                // RACIZPISAN se MORA zapisati na strežnik neodvisno od stanja Bluetooth tiskalnika!
+                BluetoothPrintHelper.sendRacIzpisanNaServer(context, racun, textPreviewZaServer, zaPrintKopij);
+
+                // 2. PREVERJANJE BLUETOOTH DOVOLJENJ (s prikazom sistemskega dialoga, če manjkajo)
                 if (!BluetoothPrintHelper.hasBluetoothPermissions(context)) {
-                    postError(listener, "Aplikacija nima dovoljenja za Bluetooth! Zahtevajte BLUETOOTH_CONNECT.");
+                    Activity act = findActivity(context);
+                    if (act != null && !act.isFinishing() && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                        mainHandler.post(() -> ActivityCompat.requestPermissions(
+                                act,
+                                new String[]{Manifest.permission.BLUETOOTH_CONNECT, Manifest.permission.BLUETOOTH_SCAN},
+                                1002
+                        ));
+                    }
+                    postError(listener, "Aplikacija nima dovoljenja za Bluetooth! Potrdite dovoljenje za Bluetooth in ponovite izpis.");
                     return;
                 }
 
@@ -73,18 +106,7 @@ public class PrintDataHandler {
                     return;
                 }
 
-                Globals globals = Globals.getInstance();
-                AppPreferences prefs = new AppPreferences(context);
-                String serverUrl = prefs.getServerUrl();
-                String token = prefs.getToken();
-                if (serverUrl == null || serverUrl.isEmpty()) serverUrl = globals.getServerUrl();
-                if (token == null || token.isEmpty()) token = globals.getToken();
-
-                // 1. KASKADA PRIDOBIVANJA PODATKOV (Pre-Print Retrieval)
-                globals.vpisiKronologijo("PrintDataHandler: Začetek priprave podatkov za R:" + racun.getRacunId());
-                PrintDataWS printData = retrievePrintData(serverUrl, token, racun, globals);
-
-                // 2. PRIPRAVA BLUETOOTH TISKALNIKA
+                // 3. PRIPRAVA BLUETOOTH TISKALNIKA
                 String targetPrinterName = globals.getPrinterRacuni();
                 if (targetPrinterName == null || targetPrinterName.trim().isEmpty()) {
                     targetPrinterName = prefs.getPrinterRacuni();
@@ -132,27 +154,21 @@ public class PrintDataHandler {
                 }
                 outputStream = socket.getOutputStream();
 
-                // 3. TISKANJE RAČUNA (ZANKA KOPIJ + PAVZA ZA ODREZ)
-                int zaPrintKopij = printData.getZaPrintStKopij();
-                int zacStKopij = printData.getZacStKopij();
-                String textPreviewZaServer = "";
-
+                // 4. TISKANJE RAČUNA (ZANKA KOPIJ + DIALOG PAVZA ZA ODREZ PRED NASLEDNJO KOPIJO)
                 for (int j = 0; j < zaPrintKopij; j++) {
-                    int stKopijeOznaka = 0;
-                    if (j > 0 || zacStKopij > 0) {
-                        stKopijeOznaka = (zacStKopij > 0 ? zacStKopij + j : j + 1);
-                    }
-
-                    RacunPrintBuilder.ReceiptResult racResult = RacunPrintBuilder.buildReceipt(racun, globals, stKopijeOznaka, printData);
+                    RacunPrintBuilder.ReceiptResult racResult;
                     if (j == 0) {
-                        textPreviewZaServer = racResult.getTextPreview();
+                        racResult = firstRacResult;
+                    } else {
+                        int stKopijeOznaka = (zacStKopij > 0) ? (zacStKopij + j + 1) : j;
+                        racResult = RacunPrintBuilder.buildReceipt(racun, globals, stKopijeOznaka, printData);
                     }
 
                     sendBytesToPrinter(outputStream, racResult.getPrintBytes());
 
                     // Pavza za odrez med posameznimi kopijami (razen po zadnji)
                     if (j < zaPrintKopij - 1) {
-                        waitForUserCut(context, "Odrežite papir in pritisnite OK za naslednjo kopijo!");
+                        waitForUserCut(context, "Odrežite papir in pritisnite OK za tiskanje naslednje kopije!");
                     }
                 }
 
@@ -191,9 +207,7 @@ public class PrintDataHandler {
                     outputStream.flush();
                 } catch (Exception ignored) {}
 
-                // 7. POST-PRINT POSTOPKI NA STREŽNIKU
-                BluetoothPrintHelper.sendRacIzpisanNaServer(context, racun, textPreviewZaServer, zaPrintKopij);
-
+                // RACIZPISAN je bil že shranjen na strežnik pred Bluetooth tiskanjem
                 postSuccess(listener, "Izpis uspešno poslan na " + deviceName + "!");
 
             } catch (SecurityException se) {
@@ -251,32 +265,64 @@ public class PrintDataHandler {
             }
         }
         data.setPartnerId(partnerId);
-        if (partnerId > 0 && data.getPartnerNaziv().isEmpty() && serverUrl != null && !serverUrl.isEmpty()) {
+        // Vedno pokličemo getPartner za partnerId > 0, da pridobimo tudi podatke davčne skupine
+        // (NAZIV_DAVCNASKUPINA, NAS_ULICA_DAVCNASKUPINA, DAVCNASTSKUPINA) — skladno z Delphi uPrintData.pas
+        if (partnerId > 0 && serverUrl != null && !serverUrl.isEmpty()) {
             try {
                 List<PartnerTp> pList = RosKasaSoapClient.getPartner(serverUrl, token, null, partnerId, null, null, false);
                 if (pList != null && !pList.isEmpty()) {
                     PartnerTp p = pList.get(0);
-                    data.setPartnerNaziv(p.getNaziv());
-                    String naslov = p.getNasUlica() + (!p.getNazivPosta().isEmpty() ? ", " + p.getNazivPosta() : "");
-                    data.setPartnerNaslov(naslov);
-                    data.setPartnerDavcna(p.getDavcnaSt());
+                    if (data.getPartnerNaziv().isEmpty()) {
+                        data.setPartnerNaziv(p.getNaziv());
+                        String naslov = p.getNasUlica() + (!p.getNazivPosta().isEmpty() ? ", " + p.getNazivPosta() : "");
+                        data.setPartnerNaslov(naslov);
+                    }
+                    String dsNaziv = p.getNazivDavcnaSkupina();
+                    String dsNaslov = p.getNasUlicaDavcnaSkupina();
+                    String dsDavcna = p.getDavcnaStSkupina();
+                    if (dsDavcna.isEmpty() && dsNaziv.isEmpty()) {
+                        if (data.getPartnerDavcna().isEmpty()) {
+                            data.setPartnerDavcna(p.getDavcnaSt());
+                        }
+                        data.setPartnerDSNaziv("");
+                        data.setPartnerDSNaslov("");
+                        data.setPartnerDSDavcna("");
+                    } else {
+                        // Skladno z Delphi uPrintData.pas: če obstaja davčna skupina, se izpišeta oba partnerja,
+                        // davčna številka pa pri davčni skupini.
+                        data.setPartnerDavcna("");
+                        data.setPartnerDSNaziv(dsNaziv);
+                        data.setPartnerDSNaslov(dsNaslov);
+                        data.setPartnerDSDavcna(dsDavcna);
+                    }
+                    data.setPartnerDavcnaSkupina(p.getDavcnaSkupina());
                 }
             } catch (Exception e) {
                 Log.w(TAG, "retrievePrintData napaka getPartner: " + e.getMessage());
             }
         }
 
-        // B. Gost hotela (Prijava)
+        // B. Gost hotela (Prijava) ali Skupina (HIS_CENIK_AI)
         int prijavaId = 0;
+        int hisCenikAi = 0;
+        String hisCenikFallbackNaziv = "";
         if (racun.getRacPlaci() != null) {
             for (PlaciloTp pl : racun.getRacPlaci()) {
                 if (pl != null && pl.getGostPrijavaId() != null && pl.getGostPrijavaId() > 0) {
                     prijavaId = pl.getGostPrijavaId();
                     break;
                 }
+                if (pl != null && pl.getHisCenikAi() != null && pl.getHisCenikAi() > 0) {
+                    hisCenikAi = pl.getHisCenikAi();
+                    if (pl.getNazivPartner() != null && !pl.getNazivPartner().trim().isEmpty()) {
+                        hisCenikFallbackNaziv = pl.getNazivPartner().trim();
+                    }
+                    break;
+                }
             }
         }
         data.setPrijavaId(prijavaId);
+        data.setHisCenikAi(hisCenikAi);
         if (prijavaId > 0 && serverUrl != null && !serverUrl.isEmpty()) {
             try {
                 KartprijTp kp = RosKasaSoapClient.getPrijava(serverUrl, token, prijavaId);
@@ -287,6 +333,26 @@ public class PrintDataHandler {
             } catch (Exception e) {
                 Log.w(TAG, "retrievePrintData napaka getPrijava: " + e.getMessage());
             }
+        } else if (hisCenikAi > 0) {
+            String skupNaziv = hisCenikFallbackNaziv;
+            if (skupNaziv.isEmpty() && serverUrl != null && !serverUrl.isEmpty()) {
+                try {
+                    java.util.List<Integer> obratiList = new java.util.ArrayList<>();
+                    if (globals.getHisObrat() > 0) obratiList.add(globals.getHisObrat());
+                    List<RosKasaSoapClient.SkupinaItem> skupine = RosKasaSoapClient.getListaSkupin(serverUrl, token, obratiList);
+                    if (skupine != null) {
+                        for (RosKasaSoapClient.SkupinaItem s : skupine) {
+                            if (s.cenikAi == hisCenikAi) {
+                                skupNaziv = s.skupinaNaziv + (!s.storitevNaziv.isEmpty() ? " / " + s.storitevNaziv : "");
+                                break;
+                            }
+                        }
+                    }
+                } catch (Exception e) {
+                    Log.w(TAG, "retrievePrintData napaka getListaSkupin: " + e.getMessage());
+                }
+            }
+            data.setHisCenikNaziv("Skupina: " + (!skupNaziv.isEmpty() ? skupNaziv : ("#" + hisCenikAi)));
         }
 
         // C. Storno razlog
@@ -302,7 +368,8 @@ public class PrintDataHandler {
             }
         }
 
-        // D. POS Slip (Ema2 / Worldline)
+        // D. POS Slip (Ema2 / Worldline) — upošteva PRINTAMSLIPNARACUN, ACQTRANSREF deduplikacijo in storno 'REF' slip
+        int stornoRacunIdForSlip = racun.getStornoRacunId() != null ? racun.getStornoRacunId() : 0;
         boolean hasCardPayment = false;
         if (racun.getRacPlaci() != null) {
             for (PlaciloTp pl : racun.getRacPlaci()) {
@@ -319,13 +386,22 @@ public class PrintDataHandler {
                 }
             }
         }
-        if (hasCardPayment && serverUrl != null && !serverUrl.isEmpty()) {
+        if (globals.isPrintamSlipNaRacun() && (hasCardPayment || stornoRacunIdForSlip > 0) && serverUrl != null && !serverUrl.isEmpty()) {
             try {
-                List<SlipEmaTp> slips = RosKasaSoapClient.getSlipEma2(serverUrl, token, racun.getRacunId());
+                int targetSlipRacunId = (stornoRacunIdForSlip > 0) ? stornoRacunIdForSlip : racun.getRacunId();
+                List<SlipEmaTp> slips = RosKasaSoapClient.getSlipEma2(serverUrl, token, targetSlipRacunId);
                 if (slips != null && !slips.isEmpty()) {
                     StringBuilder slipSb = new StringBuilder();
+                    java.util.Set<String> seenRefs = new java.util.HashSet<>();
                     for (SlipEmaTp s : slips) {
                         if (s == null) continue;
+                        if (stornoRacunIdForSlip > 0 && !"REF".equalsIgnoreCase(s.getAvtorizacija())) {
+                            continue;
+                        }
+                        String acqRef = s.getAcqTransRef() != null ? s.getAcqTransRef().trim() : "";
+                        if (!acqRef.isEmpty() && !seenRefs.add(acqRef)) {
+                            continue; // Deduplikacija po ACQTRANSREF
+                        }
                         String sp = (s.getSlipPrint() != null && !s.getSlipPrint().trim().isEmpty())
                                 ? s.getSlipPrint().trim()
                                 : (s.getSlipPrints() != null ? s.getSlipPrints().trim() : "");
@@ -343,9 +419,7 @@ public class PrintDataHandler {
         }
 
         // Fallback: če iz strežnika nismo pridobili slipa, preveri lokalni zadnji prejeti POS slip
-        // POMEMBNO: Fallback se SME izvesti SAMO, če gre dejansko za kartično/POS plačilo (hasCardPayment == true)
-        // IN če lokalni slip pripada temu računu ali je bil pravkar sprejet za ta račun!
-        if (hasCardPayment && data.getSlipString().isEmpty() && globals.getZadnjiSlipText() != null && !globals.getZadnjiSlipText().trim().isEmpty()) {
+        if (globals.isPrintamSlipNaRacun() && hasCardPayment && data.getSlipString().isEmpty() && globals.getZadnjiSlipText() != null && !globals.getZadnjiSlipText().trim().isEmpty()) {
             if (globals.getZadnjiSlipRacunId() == 0 || globals.getZadnjiSlipRacunId() == racun.getRacunId()) {
                 data.setSlipString(si.ros.RosKasa.payment.SixTapPaymentService.cleanSlipText(globals.getZadnjiSlipText()));
             }
@@ -355,7 +429,7 @@ public class PrintDataHandler {
         boolean isAkcije = globals.isAkcije();
         int racId = racun.getRacunId();
         int racStatus = racun.getStatus();
-        int stornoRacId = racun.getStornoRazlogId() != null ? racun.getStornoRazlogId() : (racun.getStornoRacunId() != null ? racun.getStornoRacunId() : 0);
+        int stornoRacId = racun.getStornoRacunId() != null ? racun.getStornoRacunId() : 0;
         int stornoOrig = racun.getStornoOriginal() != null ? racun.getStornoOriginal() : 0;
         boolean hasServer = serverUrl != null && !serverUrl.trim().isEmpty();
 
@@ -423,6 +497,40 @@ public class PrintDataHandler {
                 String errMsg = "retrievePrintData napaka akcije: " + e.getMessage();
                 Log.w(TAG, errMsg, e);
                 globals.vpisiKronologijoDebugL0(errMsg);
+            }
+        }
+
+        // F. CRM točke in izpis (skladno z Delphi uPrintData.pas)
+        String crmId = racun.getCrmId() != null ? racun.getCrmId().trim() : "";
+        data.setCrmId(crmId);
+        if (!crmId.isEmpty() && serverUrl != null && !serverUrl.trim().isEmpty()) {
+            try {
+                if (racun.getStatus() < 2 && racun.getRacunId() > 0) {
+                    RosKasaSoapClient.crmTocke(serverUrl, token, racun.getRacunId());
+                }
+                RosKasaSoapClient.CrmInfoResult crmInfo = RosKasaSoapClient.crmInfo(
+                        serverUrl, token, null, crmId);
+                BigDecimal kapljice = (racun.getRacunId() > 0)
+                        ? RosKasaSoapClient.crmGetStTock(serverUrl, token, racun.getRacunId())
+                        : BigDecimal.ZERO;
+
+                java.util.List<String> crmLines = new java.util.ArrayList<>();
+                crmLines.add("CRM kartica: " + crmId);
+                if (crmInfo != null && (crmInfo.fault == null || crmInfo.fault.trim().isEmpty())) {
+                    String ime = (crmInfo.ime + " " + crmInfo.priimek).trim();
+                    if (!ime.isEmpty()) crmLines.add("Gost: " + ime);
+                    if (kapljice != null && kapljice.compareTo(BigDecimal.ZERO) != 0) {
+                        crmLines.add(String.format(java.util.Locale.GERMAN, "Pridobljene točke: %.2f", kapljice));
+                    }
+                    if (crmInfo.stanje != null) {
+                        crmLines.add(String.format(java.util.Locale.GERMAN, "Stanje točk: %.2f", crmInfo.stanje));
+                    }
+                } else if (kapljice != null && kapljice.compareTo(BigDecimal.ZERO) != 0) {
+                    crmLines.add(String.format(java.util.Locale.GERMAN, "Pridobljene točke: %.2f", kapljice));
+                }
+                data.setCrmIzpisLines(crmLines);
+            } catch (Exception e) {
+                Log.w(TAG, "retrievePrintData napaka CRM: " + e.getMessage());
             }
         }
 
@@ -496,9 +604,8 @@ public class PrintDataHandler {
 
     private static void sendBytesToPrinter(OutputStream outputStream, byte[] bytes) throws Exception {
         if (outputStream == null || bytes == null || bytes.length == 0) return;
+        // Builderji že sami dodajo zaključek in odrez papirja (brez dvojnega GS V B 0)
         outputStream.write(bytes);
-        outputStream.write("\n\n\n".getBytes(StandardCharsets.UTF_8));
-        outputStream.write(new byte[]{0x1D, 0x56, 0x42, 0x00}); // GS V B 0 (cut)
         outputStream.flush();
     }
 

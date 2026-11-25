@@ -71,6 +71,7 @@ public class PlaciloTp {
         copy.napitnina = this.napitnina;
         copy.status = this.status;
         copy.gostPrijavaId = this.gostPrijavaId;
+        copy.hisCenikAi = this.hisCenikAi;
         copy.stNarocilnice = this.stNarocilnice;
         copy.kupecId = this.kupecId;
         copy.mRef = this.mRef;

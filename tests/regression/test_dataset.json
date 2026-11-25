@@ -1,0 +1,304 @@
+{
+  "schema_version": "1.0",
+  "description": "Enotni testni dataset za regresijsko testiranje RosKasa (Android), RosKasaLight16 (Delphi FMX) in RosKasaMobile2027 (Delphi FMX).",
+  "environment": {
+    "soap_url": "https://web.ros.si/ora/r16f/asmx/kasa.asmx",
+    "mobile_id": 6,
+    "token": "lpdZEc84S0ahF-jZz0RaLg",
+    "pin": "9999",
+    "oracle": {
+      "tns_alias": "ROS",
+      "user": "GASTS",
+      "nls_lang": "SLOVENIAN_SLOVENIA.EE8MSWIN1250"
+    }
+  },
+  "tables": {
+    "primary": "Miza 58",
+    "secondary": "Miza 59",
+    "split_target": "Miza 60",
+    "all_test_markers": ["Miza 58", "Miza 59", "Miza 60"]
+  },
+  "articles": {
+    "paket_kremna_rezina": {
+      "nivo4_id": 809010081,
+      "search_text": "PAKET KREMNA  REZINA",
+      "db_name": "PAKET KREMNA REZINA",
+      "type": "paket",
+      "expected_sub_items": [312010007, 318220003, 339130002],
+      "price_source": "cenik"
+    },
+    "pijaca_lestvica_belo": {
+      "nivo4_id": 318130001,
+      "search_text": "A BELO GORIŠKO",
+      "db_name": "VB7 A+, BELO GORIŠKA BRDA",
+      "type": "lestvica",
+      "price_source": "cenik"
+    },
+    "pivo_guinnes": {
+      "nivo4_id": 315070022,
+      "search_text": "PIVO GUINNES 0,33 ST",
+      "db_name": "PIVO GUINNES 0,33 ST.",
+      "type": "simple",
+      "price_source": "cenik"
+    },
+    "pivo_lasko": {
+      "nivo4_id": 315070008,
+      "search_text": "PIVO LAŠKO 0,33 ST.",
+      "db_name": "PIVO LAŠKO 0,33 ST.",
+      "type": "simple",
+      "price_source": "cenik"
+    }
+  },
+  "payments": {
+    "gotovina": {
+      "placilo_id": 1,
+      "name": "GOTOVINA",
+      "expected_fiskalizacija": 1
+    },
+    "kred_k_rocno": {
+      "placilo_id": 5,
+      "name": "KRED. K ROCNO",
+      "expected_fiskalizacija": 1
+    },
+    "dobavnica": {
+      "placilo_id": 12,
+      "name": "DOBAVNICA",
+      "expected_fiskalizacija": null,
+      "requires_partner": true
+    },
+    "gost_hotela": {
+      "placilo_id": 31,
+      "name": "GOST HOTELA",
+      "expected_fiskalizacija": null,
+      "requires_hotel_guest": true
+    },
+    "popust_99": {
+      "placilo_id": 99,
+      "name": "POPUST"
+    }
+  },
+  "partners": {
+    "ros": {
+      "partner_id": 41125,
+      "search_text": "ROS D.O.O.",
+      "db_name": "ROS D.O.O."
+    },
+    "prva_osebna_zavarovalnica": {
+      "partner_id": 654330,
+      "search_text": "PRVA OSEBNA ZAVAROVALNICA",
+      "db_name": "PRVA OSEBNA ZAVAROVALNICA D.D."
+    }
+  },
+  "hotel_guest": {
+    "room": "205",
+    "guest_search": "EVA"
+  },
+  "discounts": {
+    "popust_99_celoten_racun": {
+      "type": "invoice_discount_99",
+      "percent": 10
+    },
+    "popust_1_pozicija": {
+      "type": "line_discount",
+      "percent": 10
+    }
+  },
+  "scenarios": [
+    {
+      "id": "TC01_SIMPLE_GOTOVINA",
+      "group": "SIMPLE",
+      "description": "Knjiženje naročila (navaden artikel), POST, plačilo Gotovina (1), izpis računa.",
+      "marker": "Miza 58",
+      "steps": [
+        { "action": "login", "pin": "9999" },
+        { "action": "select_table", "marker": "Miza 58" },
+        { "action": "add_article", "article": "pivo_lasko", "qty": 1 },
+        { "action": "post_order" },
+        { "action": "add_payment", "payment": "gotovina", "amount": "full" },
+        { "action": "print_receipt" }
+      ],
+      "assertions": {
+        "racglava_status": 2,
+        "fiskalizacija": 1,
+        "racizpisan_exists": true,
+        "placilo_ids": [1]
+      }
+    },
+    {
+      "id": "TC02_PAKET_KRED_ROCNO",
+      "group": "PLACILA",
+      "description": "Knjiženje paketne storitve (809010081), POST, plačilo Kred. k. ročno (5), izpis računa.",
+      "marker": "Miza 58",
+      "steps": [
+        { "action": "select_table", "marker": "Miza 58" },
+        { "action": "add_article", "article": "paket_kremna_rezina", "qty": 1 },
+        { "action": "post_order" },
+        { "action": "add_payment", "payment": "kred_k_rocno", "amount": "full" },
+        { "action": "print_receipt" }
+      ],
+      "assertions": {
+        "racglava_status": 2,
+        "fiskalizacija": 1,
+        "racizpisan_exists": true,
+        "paket_expanded": true,
+        "placilo_ids": [5]
+      }
+    },
+    {
+      "id": "TC03_LESTVICA_GOST_HOTELA",
+      "group": "PLACILA",
+      "description": "Knjiženje pijače z lestvico (318130001), POST, plačilo Gost hotela (31, soba 205 EVA), izpis računa.",
+      "marker": "Miza 58",
+      "steps": [
+        { "action": "select_table", "marker": "Miza 58" },
+        { "action": "add_article", "article": "pijaca_lestvica_belo", "qty": 1, "select_lestvica": true },
+        { "action": "post_order" },
+        { "action": "add_payment", "payment": "gost_hotela", "room": "205", "guest": "EVA", "amount": "full" },
+        { "action": "print_receipt" }
+      ],
+      "assertions": {
+        "racglava_status": 2,
+        "fiskalizacija_not_1": true,
+        "racizpisan_exists": true,
+        "hotel_guest_linked": true,
+        "placilo_ids": [31]
+      }
+    },
+    {
+      "id": "TC04_DOBAVNICA_ROS",
+      "group": "PLACILA",
+      "description": "Knjiženje artikla (315070022), POST, plačilo Dobavnica (12, partner 41125 'ROS D.O.O.'), izpis računa.",
+      "marker": "Miza 58",
+      "steps": [
+        { "action": "select_table", "marker": "Miza 58" },
+        { "action": "add_article", "article": "pivo_guinnes", "qty": 1 },
+        { "action": "post_order" },
+        { "action": "add_payment", "payment": "dobavnica", "partner_search": "ROS D.O.O.", "expected_partner_id": 41125, "amount": "full" },
+        { "action": "print_receipt" }
+      ],
+      "assertions": {
+        "racglava_status": 2,
+        "fiskalizacija_not_1": true,
+        "racizpisan_exists": true,
+        "partner_linked": true,
+        "partner_id": 41125,
+        "placilo_ids": [12]
+      }
+    },
+    {
+      "id": "TC05_DOBAVNICA_PRVA_OSEBNA_ZAVAROVALNICA",
+      "group": "PLACILA",
+      "description": "Knjiženje artikla (315070008), POST, plačilo Dobavnica (12, partner 654330 'PRVA OSEBNA ZAVAROVALNICA'), izpis računa.",
+      "marker": "Miza 58",
+      "steps": [
+        { "action": "select_table", "marker": "Miza 58" },
+        { "action": "add_article", "article": "pivo_lasko", "qty": 1 },
+        { "action": "post_order" },
+        { "action": "add_payment", "payment": "dobavnica", "partner_search": "PRVA OSEBNA ZAVAROVALNICA", "expected_partner_id": 654330, "amount": "full" },
+        { "action": "print_receipt" }
+      ],
+      "assertions": {
+        "racglava_status": 2,
+        "fiskalizacija_not_1": true,
+        "racizpisan_exists": true,
+        "partner_linked": true,
+        "partner_id": 654330,
+        "placilo_ids": [12]
+      }
+    },
+    {
+      "id": "TC06_POPUST_99_CELOTEN_RACUN",
+      "group": "POPUSTI",
+      "description": "Popust 99 (10%) na celoten račun, plačilo Gotovina (1), izpis računa.",
+      "marker": "Miza 58",
+      "steps": [
+        { "action": "select_table", "marker": "Miza 58" },
+        { "action": "add_article", "article": "pivo_lasko", "qty": 2 },
+        { "action": "add_article", "article": "pivo_guinnes", "qty": 1 },
+        { "action": "post_order" },
+        { "action": "apply_discount_99", "percent": 10 },
+        { "action": "add_payment", "payment": "gotovina", "amount": "remaining" },
+        { "action": "print_receipt" }
+      ],
+      "assertions": {
+        "racglava_status": 2,
+        "fiskalizacija": 1,
+        "discount_99_percent": 10,
+        "racizpisan_exists": true
+      }
+    },
+    {
+      "id": "TC07_POPUST_1_POZICIJA",
+      "group": "POPUSTI",
+      "description": "Popust 10% na 1 pozicijo, druga pozicija brez popusta, plačilo Gotovina (1), izpis računa.",
+      "marker": "Miza 58",
+      "steps": [
+        { "action": "select_table", "marker": "Miza 58" },
+        { "action": "add_article", "article": "pivo_lasko", "qty": 1, "line_discount_percent": 10 },
+        { "action": "add_article", "article": "pivo_guinnes", "qty": 1, "line_discount_percent": 0 },
+        { "action": "post_order" },
+        { "action": "add_payment", "payment": "gotovina", "amount": "full" },
+        { "action": "print_receipt" }
+      ],
+      "assertions": {
+        "racglava_status": 2,
+        "fiskalizacija": 1,
+        "line_discount_verified": true,
+        "racizpisan_exists": true
+      }
+    },
+    {
+      "id": "TC08_ZDRUZI_IN_SPLIT",
+      "group": "ZDRUZI_SPLIT",
+      "description": "Miza 58 (Paket + 4x navaden artikel) + Miza 59 (2. račun) -> Združi oba -> Split 2x navaden artikel na nov račun (Miza 60).",
+      "markers": ["Miza 58", "Miza 59", "Miza 60"],
+      "steps": [
+        { "action": "select_table", "marker": "Miza 58" },
+        { "action": "add_article", "article": "paket_kremna_rezina", "qty": 1 },
+        { "action": "add_article", "article": "pivo_lasko", "qty": 4 },
+        { "action": "post_order", "save_ref": "racun_A" },
+        { "action": "select_table", "marker": "Miza 59" },
+        { "action": "add_article", "article": "pivo_guinnes", "qty": 1 },
+        { "action": "post_order", "save_ref": "racun_B" },
+        { "action": "merge_receipts", "source_ref": "racun_B", "target_ref": "racun_A" },
+        { "action": "split_receipt", "source_ref": "racun_A", "article": "pivo_lasko", "split_qty": 2, "target_marker": "Miza 60", "save_ref": "racun_C" }
+      ],
+      "assertions": {
+        "merged_ok": true,
+        "split_source_remaining_qty": 2,
+        "split_target_qty": 2,
+        "total_sum_conserved": true
+      }
+    },
+    {
+      "id": "TC09_STORNO_Z_NOVIM_RACUNOM",
+      "group": "STORNO",
+      "description": "Storno izpisanega računa iz TC01 z kreiranjem novega odprtega računa.",
+      "depends_on": "TC01_SIMPLE_GOTOVINA",
+      "steps": [
+        { "action": "open_printed_receipts" },
+        { "action": "storno_receipt", "source_scenario": "TC01_SIMPLE_GOTOVINA", "create_new_receipt": true }
+      ],
+      "assertions": {
+        "original_has_storno_id": true,
+        "storno_negative_amount": true,
+        "new_open_receipt_created": true
+      }
+    },
+    {
+      "id": "TC10_STORNO_BREZ_NOVEGA_RACUNA",
+      "group": "STORNO",
+      "description": "Storno izpisanega računa iz TC02 brez kreiranja novega računa.",
+      "depends_on": "TC02_PAKET_KRED_ROCNO",
+      "steps": [
+        { "action": "open_printed_receipts" },
+        { "action": "storno_receipt", "source_scenario": "TC02_PAKET_KRED_ROCNO", "create_new_receipt": false }
+      ],
+      "assertions": {
+        "original_has_storno_id": true,
+        "storno_negative_amount": true,
+        "new_open_receipt_created": false
+      }
+    }
+  ]
+}

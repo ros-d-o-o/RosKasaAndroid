@@ -29,8 +29,13 @@ public class PrintDataWS {
     private String partnerNaziv = "";
     private String partnerNaslov = "";
     private String partnerDavcna = "";
+    private String partnerDavcnaSkupina = "";
+    private String partnerDSNaziv = "";
+    private String partnerDSNaslov = "";
+    private String partnerDSDavcna = "";
     private String stNarocilnice = "";
     private String stornoRazlog = "";
+    private List<String> crmIzpisLines = new ArrayList<>();
 
     private String fPodpis = "";
     private String fOznakaDu = "";
@@ -68,8 +73,13 @@ public class PrintDataWS {
         partnerNaziv = "";
         partnerNaslov = "";
         partnerDavcna = "";
+        partnerDavcnaSkupina = "";
+        partnerDSNaziv = "";
+        partnerDSNaslov = "";
+        partnerDSDavcna = "";
         stNarocilnice = "";
         stornoRazlog = "";
+        crmIzpisLines.clear();
 
         fPodpis = "";
         fOznakaDu = "";
@@ -222,6 +232,22 @@ public class PrintDataWS {
         this.partnerDavcna = partnerDavcna;
     }
 
+    public String getPartnerDavcnaSkupina() {
+        return partnerDavcnaSkupina != null ? partnerDavcnaSkupina : "";
+    }
+
+    public void setPartnerDavcnaSkupina(String partnerDavcnaSkupina) {
+        this.partnerDavcnaSkupina = partnerDavcnaSkupina != null ? partnerDavcnaSkupina : "";
+    }
+
+    public List<String> getCrmIzpisLines() {
+        return crmIzpisLines;
+    }
+
+    public void setCrmIzpisLines(List<String> crmIzpisLines) {
+        this.crmIzpisLines = crmIzpisLines != null ? crmIzpisLines : new ArrayList<>();
+    }
+
     public String getStNarocilnice() {
         return stNarocilnice != null ? stNarocilnice : "";
     }
@@ -320,6 +346,30 @@ public class PrintDataWS {
 
     public boolean isPreview() {
         return preview;
+    }
+
+    public String getPartnerDSNaziv() {
+        return partnerDSNaziv != null ? partnerDSNaziv : "";
+    }
+
+    public void setPartnerDSNaziv(String partnerDSNaziv) {
+        this.partnerDSNaziv = partnerDSNaziv != null ? partnerDSNaziv : "";
+    }
+
+    public String getPartnerDSNaslov() {
+        return partnerDSNaslov != null ? partnerDSNaslov : "";
+    }
+
+    public void setPartnerDSNaslov(String partnerDSNaslov) {
+        this.partnerDSNaslov = partnerDSNaslov != null ? partnerDSNaslov : "";
+    }
+
+    public String getPartnerDSDavcna() {
+        return partnerDSDavcna != null ? partnerDSDavcna : "";
+    }
+
+    public void setPartnerDSDavcna(String partnerDSDavcna) {
+        this.partnerDSDavcna = partnerDSDavcna != null ? partnerDSDavcna : "";
     }
 
     public void setPreview(boolean preview) {

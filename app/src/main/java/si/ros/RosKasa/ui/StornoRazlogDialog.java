@@ -73,6 +73,11 @@ public class StornoRazlogDialog {
             Integer razlogId = (selected != null && selected.getStornoRazlogId() > 0) ? selected.getStornoRazlogId() : null;
             String razlogNaziv = selected != null ? selected.getNaziv() : "";
 
+            if (Globals.getInstance().isRazlogStorno() && razlogId == null) {
+                android.widget.Toast.makeText(context, "Izbira razloga storna je obvezna!", android.widget.Toast.LENGTH_SHORT).show();
+                return;
+            }
+
             new AlertDialog.Builder(context)
                     .setTitle("Storno računa")
                     .setMessage("Ali naredimo nov račun na podlagi storno računa?")

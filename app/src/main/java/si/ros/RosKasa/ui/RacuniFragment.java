@@ -190,6 +190,106 @@ public class RacuniFragment extends Fragment implements RacunSeznamAdapter.OnIte
         binding.btnZdruzi.setOnClickListener(v -> izvediZdruziRacune());
         binding.btnDeli.setOnClickListener(v -> izvediSplitRacuna());
         binding.btnZamenjajMarker.setOnClickListener(v -> izvediZamenjajMarker());
+        binding.btnObracunani.setOnClickListener(v -> izvediIskanjeObracunanegaRacuna());
+        binding.btnPrikaz.setOnClickListener(v -> {
+            RacunSeznamItem selected = adapter.getSelectedItem();
+            if (selected == null) {
+                Toast.makeText(requireContext(), "Prosim izberite račun za prikaz!", Toast.LENGTH_SHORT).show();
+                return;
+            }
+            prikaziPredogledRacuna(selected);
+        });
+    }
+
+    /**
+     * Delphi FormKasaMobile.pas btnIzpisaniClick + getRacunIzbran:
+     * Iskanje obračunanega računa (STATUS=4, ali tudi STATUS=2) po referenčni številki (RACUN_ID)
+     * za daljše obdobje maxDniNazaj (privzeto 365 dni).
+     */
+    private void izvediIskanjeObracunanegaRacuna() {
+        if (getContext() == null) return;
+        if (!Globals.getInstance().isDovoljeno(PraviceConsts.SLahkoPonovnoIzpiseRacun)) {
+            Toast.makeText(requireContext(), "Ni pravic za ponoven izpis računa!", Toast.LENGTH_LONG).show();
+            return;
+        }
+
+        final android.widget.EditText input = new android.widget.EditText(requireContext());
+        input.setInputType(android.text.InputType.TYPE_CLASS_NUMBER);
+        input.setHint("Vpiši ref. št. računa");
+        int pad = (int) (16 * getResources().getDisplayMetrics().density);
+        android.widget.FrameLayout container = new android.widget.FrameLayout(requireContext());
+        container.setPadding(pad, pad / 2, pad, 0);
+        container.addView(input);
+
+        new AlertDialog.Builder(requireContext())
+                .setTitle("Obračunani računi")
+                .setMessage("Vpiši ref. št. računa (obdobje zadnjih " + Globals.getInstance().getMaxDniNazaj() + " dni):")
+                .setView(container)
+                .setPositiveButton("Išči", (d, w) -> {
+                    String val = input.getText().toString().trim();
+                    if (val.isEmpty()) return;
+                    int pomRacunId;
+                    try {
+                        pomRacunId = Integer.parseInt(val);
+                    } catch (NumberFormatException ex) {
+                        Toast.makeText(requireContext(), "Neveljavna številka računa!", Toast.LENGTH_SHORT).show();
+                        return;
+                    }
+                    if (pomRacunId <= 0) return;
+
+                    final int maxDni = Globals.getInstance().getMaxDniNazaj();
+                    Calendar cal = Calendar.getInstance();
+                    cal.add(Calendar.DAY_OF_MONTH, -maxDni);
+                    SimpleDateFormat sdf = new SimpleDateFormat("yyyy-MM-dd'T'00:00:00", Locale.getDefault());
+                    final String odDatum = sdf.format(cal.getTime());
+
+                    Globals g = Globals.getInstance();
+                    final int strmId = (g.getTocilnicaId() != null && g.getTocilnicaId() > 0)
+                            ? g.getTocilnicaId() : prefs.getTocilnicaId();
+
+                    binding.pbLoading.setVisibility(View.VISIBLE);
+                    executor.execute(() -> {
+                        try {
+                            RacunTp r = RosKasaSoapClient.getRacun(
+                                    prefs.getServerUrl(),
+                                    prefs.getToken(),
+                                    pomRacunId,
+                                    strmId,
+                                    odDatum
+                            );
+                            mainHandler.post(() -> {
+                                if (binding != null) binding.pbLoading.setVisibility(View.GONE);
+                                if (getContext() == null) return;
+                                if (r != null && r.getRacunId() > 0) {
+                                    RacunSeznamItem foundItem = new RacunSeznamItem(
+                                            r.getRacunId(),
+                                            r.getKasiral(),
+                                            r.getMarker() != null ? r.getMarker() : "",
+                                            r.getStatus(),
+                                            r.getStornoRacunId(),
+                                            r.getZnesek()
+                                    );
+                                    prikaziPredogledRacuna(foundItem, r);
+                                } else {
+                                    Toast.makeText(requireContext(),
+                                            "Račun #" + pomRacunId + " ni bil najden (zadnjih " + maxDni + " dni).",
+                                            Toast.LENGTH_LONG).show();
+                                }
+                            });
+                        } catch (Exception e) {
+                            mainHandler.post(() -> {
+                                if (binding != null) binding.pbLoading.setVisibility(View.GONE);
+                                if (getContext() != null) {
+                                    Toast.makeText(requireContext(),
+                                            "Napaka pri iskanju računa #" + pomRacunId + ": " + e.getMessage(),
+                                            Toast.LENGTH_LONG).show();
+                                }
+                            });
+                        }
+                    });
+                })
+                .setNegativeButton("Prekliči", null)
+                .show();
     }
 
     private void checkPermissionsAndPrint() {
@@ -258,7 +358,11 @@ public class RacuniFragment extends Fragment implements RacunSeznamAdapter.OnIte
 
     private String calculateOdDatum() {
         Calendar cal = Calendar.getInstance();
-        cal.add(Calendar.DAY_OF_MONTH, -3); // Privzeto getdate() - 3 dni (danes 02.08.2026 -> 31.07.2026 00:00:00)
+        int dniNazaj = 3;
+        if (currentStatusFilter == 2 && Globals.getInstance().getIzpisaniVidniDo() > 0) {
+            dniNazaj = Globals.getInstance().getIzpisaniVidniDo();
+        }
+        cal.add(Calendar.DAY_OF_MONTH, -dniNazaj);
         SimpleDateFormat sdf = new SimpleDateFormat("yyyy-MM-dd'T'00:00:00", Locale.getDefault());
         return sdf.format(cal.getTime());
     }
@@ -278,13 +382,23 @@ public class RacuniFragment extends Fragment implements RacunSeznamAdapter.OnIte
 
         executor.execute(() -> {
             try {
-                // Klic WSDL getRacuniSeznam s parametroma STATUS in OD_DATUM
+                Globals g = Globals.getInstance();
+                boolean vidiVse = (currentStatusFilter == 1)
+                        ? (g.isDovoljeno(PraviceConsts.SVidiVsaNarocila) || g.isOdpriVseRacune())
+                        : (g.isDovoljeno(PraviceConsts.SVidiVseRacune) || g.isOdpriVseRacune());
+                int pOseba = vidiVse ? 0 : g.getTekocaOsebaId();
+                int strmId = (g.getTocilnicaId() != null && g.getTocilnicaId() > 0)
+                        ? g.getTocilnicaId() : prefs.getTocilnicaId();
+
+                // Klic WSDL getRacuniSeznam s parametri STATUS, OD_DATUM, OSEBA_ID in STRM_ID
                 List<RacunSeznamItem> result = RosKasaSoapClient.getRacuniSeznam(
                         prefs.getServerUrl(),
                         prefs.getToken(),
                         prefs.getMobileId(),
                         currentStatusFilter,
-                        odDatum
+                        odDatum,
+                        pOseba,
+                        strmId
                 );
 
                 mainHandler.post(() -> {
@@ -364,12 +478,16 @@ public class RacuniFragment extends Fragment implements RacunSeznamAdapter.OnIte
                 prikaziPredogledRacuna(item);
             } else {
                 Globals.getInstance().setCurrentRacun(null);
-                Toast.makeText(requireContext(), "Izbran odprt račun #" + item.getRacunId() + " (Miza: " + item.getMarker() + ")", Toast.LENGTH_SHORT).show();
+                // [DEBUG-TOAST] Toast.makeText(requireContext(), "Izbran odprt račun #" + item.getRacunId() + " (Miza: " + item.getMarker() + ")", Toast.LENGTH_SHORT).show();
             }
         }
     }
 
     private void prikaziPredogledRacuna(RacunSeznamItem item) {
+        prikaziPredogledRacuna(item, null);
+    }
+
+    private void prikaziPredogledRacuna(RacunSeznamItem item, @Nullable RacunTp preloadedRacun) {
         if (getContext() == null) return;
 
         Dialog dialog = new Dialog(requireContext());
@@ -399,7 +517,9 @@ public class RacuniFragment extends Fragment implements RacunSeznamAdapter.OnIte
 
         executor.execute(() -> {
             try {
-                RacunTp r = RosKasaSoapClient.getRacun(prefs.getServerUrl(), prefs.getToken(), item.getRacunId());
+                RacunTp r = (preloadedRacun != null)
+                        ? preloadedRacun
+                        : RosKasaSoapClient.getRacun(prefs.getServerUrl(), prefs.getToken(), item.getRacunId());
                 if (r != null) {
 
                     // Zagotovi, da je cenik naložen v predpomnilnik za lookup nazivov
@@ -466,6 +586,10 @@ public class RacuniFragment extends Fragment implements RacunSeznamAdapter.OnIte
 
         btnNatisni.setOnClickListener(v -> {
             if (racunHolder[0] == null) return;
+            if (racunHolder[0].getStatus() >= 2 && !Globals.getInstance().isDovoljeno(PraviceConsts.SLahkoPonovnoIzpiseRacun)) {
+                Toast.makeText(requireContext(), "Nimate pravice za ponovni izpis računa!", Toast.LENGTH_LONG).show();
+                return;
+            }
             dialog.dismiss();
 
             final RacunTp r = racunHolder[0];
@@ -501,15 +625,15 @@ public class RacuniFragment extends Fragment implements RacunSeznamAdapter.OnIte
                     if (binding != null) binding.pbLoading.setVisibility(View.GONE);
                     if (getContext() == null) return;
 
-                    Toast.makeText(requireContext(), "Tiskanje računa #" + item.getRacunId() + "...", Toast.LENGTH_SHORT).show();
-                    BluetoothPrintHelper.printReceipt(requireContext(), r, stKopij, new BluetoothPrintHelper.OnPrintListener() {
+                    // [DEBUG-TOAST] Toast.makeText(requireContext(), "Tiskanje računa #" + item.getRacunId() + "...", Toast.LENGTH_SHORT).show();
+                    BluetoothPrintHelper.printReceiptComplete(requireContext(), r, new BluetoothPrintHelper.OnPrintListener() {
                         @Override
                         public void onStart() {}
 
                         @Override
                         public void onSuccess(String message) {
                             if (getContext() != null) {
-                                Toast.makeText(requireContext(), "Tisk: " + message, Toast.LENGTH_SHORT).show();
+                                // [DEBUG-TOAST] Toast.makeText(requireContext(), "Tisk: " + message, Toast.LENGTH_SHORT).show();
                                 loadRacuniFromApi();
                             }
                         }
@@ -574,9 +698,14 @@ public class RacuniFragment extends Fragment implements RacunSeznamAdapter.OnIte
     private void izvediStornoRacuna(RacunSeznamItem item, RacunTp racun, Integer stornoRazlogId, boolean novoNarocilo, int urejamStorno) {
         if (getContext() == null) return;
 
-        // Preveri ali racun vsebuje karticno/POS placilo za POS storno (Delphi stornoExecute)
+        // Preveri ali racun vsebuje karticno/POS placilo za POS storno (Delphi stornoExecute: samo za 1 < STATUS < 4; za STATUS >= 4 se POS void/refund NE izvaja)
+        int racunStatus = (racun != null && racun.getStatus() > 0)
+                ? racun.getStatus()
+                : (item.getStatus() != null ? item.getStatus() : 0);
+        boolean allowPosStorno = racunStatus > 1 && racunStatus < 4;
+
         PlaciloTp posPlacilo = null;
-        if (racun != null && racun.getRacPlaci() != null) {
+        if (allowPosStorno && racun != null && racun.getRacPlaci() != null) {
             for (PlaciloTp p : racun.getRacPlaci()) {
                 if (p != null && !p.isRowDeleted()) {
                     int metoda = Globals.getInstance().placilometoda(p.getPlaciloId());
@@ -1070,6 +1199,9 @@ public class RacuniFragment extends Fragment implements RacunSeznamAdapter.OnIte
                             }
                             @Override public void onSuccess(String message) {
                                 if (getContext() != null) Toast.makeText(requireContext(), "Inkaso uspešno natisnjen!", Toast.LENGTH_SHORT).show();
+                                if (g.isNapitnine()) {
+                                    izvediPrintNapitnineInkaso(serverUrl, token, tocilnicaId, osebaId);
+                                }
                             }
                             @Override public void onError(String errorMessage) {
                                 if (getContext() != null) Toast.makeText(requireContext(), errorMessage, Toast.LENGTH_LONG).show();
@@ -1089,10 +1221,55 @@ public class RacuniFragment extends Fragment implements RacunSeznamAdapter.OnIte
         });
     }
 
+    private void izvediPrintNapitnineInkaso(String serverUrl, String token, int tocilnicaId, int osebaId) {
+        executor.execute(() -> {
+            try {
+                Calendar cal = Calendar.getInstance();
+                cal.add(Calendar.DAY_OF_MONTH, -1);
+                String odDat = new SimpleDateFormat("yyyy-MM-dd'T'00:00:00", Locale.US).format(cal.getTime());
+                List<RosKasaSoapClient.NapitninaSkupajItem> items = RosKasaSoapClient.getNapitninaSkupaj(serverUrl, token, 2, tocilnicaId, osebaId, odDat);
+                if (items == null || items.isEmpty()) return;
+
+                Globals g = Globals.getInstance();
+                int procKuh = g.getNapitnineProcentKuh();
+                StringBuilder sb = new StringBuilder();
+                sb.append("\n\nNAPITNINE NA DAN ").append(new SimpleDateFormat("dd.MM.yyyy", Locale.US).format(new java.util.Date())).append("\n\n");
+                for (RosKasaSoapClient.NapitninaSkupajItem it : items) {
+                    si.ros.RosKasa.models.OsebaTp os = g.najdiOseboById(it.kasiral);
+                    String ime = (os != null && !os.getNaziv().isEmpty()) ? os.getNaziv() : ("Oseba #" + it.kasiral);
+                    if (procKuh <= 0) {
+                        sb.append(it.kasiral).append(" ").append(ime).append(" ")
+                                .append(String.format(Locale.GERMANY, "%.2f EUR", it.napitnina)).append("\n");
+                    } else {
+                        BigDecimal kuh = it.napitnina.multiply(BigDecimal.valueOf(procKuh)).divide(BigDecimal.valueOf(100), 2, java.math.RoundingMode.HALF_UP);
+                        BigDecimal osDel = it.napitnina.subtract(kuh);
+                        sb.append(String.format(Locale.GERMANY, "%-25s: %.2f EUR\n", ime, osDel));
+                        sb.append(String.format(Locale.GERMANY, "%-25s: %.2f EUR\n", "Delež za kuhinjo (" + procKuh + "%)", kuh));
+                    }
+                    sb.append("\n");
+                }
+                sb.append("\n\n\n");
+                byte[] textBytes = sb.toString().getBytes(java.nio.charset.StandardCharsets.UTF_8);
+                java.io.ByteArrayOutputStream baos = new java.io.ByteArrayOutputStream();
+                baos.write(new byte[]{0x1B, 0x40, 0x1C, 0x26, 0x1C, 0x43, (byte) 0xFF});
+                baos.write(textBytes);
+                baos.write(new byte[]{0x1D, 0x56, 0x42, 0x00});
+                final byte[] printBytes = baos.toByteArray();
+                mainHandler.post(() -> {
+                    if (getContext() != null) {
+                        BluetoothPrintHelper.printReceiptBytes(requireContext(), printBytes, null);
+                    }
+                });
+            } catch (Exception e) {
+                Log.w("RacuniFragment", "Napaka pri izpisu napitnin: " + e.getMessage());
+            }
+        });
+    }
+
     private void izvediObracun() {
         Globals g = Globals.getInstance();
-        if (!g.isDovoljeno(PraviceConsts.SLahkoPozeneObracun)) {
-            Toast.makeText(requireContext(), "Obračun blagajne ni dovoljen v nastavitvah!", Toast.LENGTH_SHORT).show();
+        if (!g.isObracunDovoljen() || !g.isObracunAndroid() || !g.isDovoljeno(PraviceConsts.SLahkoPozeneObracun)) {
+            Toast.makeText(requireContext(), "Obračun blagajne ni dovoljen v nastavitvah ali nimate pravice!", Toast.LENGTH_LONG).show();
             return;
         }
 
@@ -1106,13 +1283,41 @@ public class RacuniFragment extends Fragment implements RacunSeznamAdapter.OnIte
                     String serverUrl = prefs.getServerUrl();
                     String token = prefs.getToken();
                     int tocilnicaId = (g.getTocilnicaId() != null && g.getTocilnicaId() > 0) ? g.getTocilnicaId() : 512200;
+                    String repFormat = (g.getReportFormat() != null && !g.getReportFormat().trim().isEmpty())
+                            ? g.getReportFormat().trim() : "ESC/POS";
 
-                    si.ros.RosKasa.models.SoapReportResult res = RosKasaSoapClient.narediObracun(serverUrl, token, 1, tocilnicaId, 0, "ESC/POS");
+                    si.ros.RosKasa.models.SoapReportResult res = RosKasaSoapClient.narediObracun(serverUrl, token, 1, tocilnicaId, 0, repFormat);
+                    List<RacunSeznamItem> odprtiObNapaki = null;
+                    if (res != null && res.getFault() != null && !res.getFault().isEmpty()) {
+                        try {
+                            List<RacunSeznamItem> allOpen = RosKasaSoapClient.getRacuniSeznam(serverUrl, token, prefs.getMobileId(), 1, "", 0, tocilnicaId);
+                            if (allOpen != null && !allOpen.isEmpty()) {
+                                odprtiObNapaki = allOpen;
+                            }
+                        } catch (Exception ignored) {}
+                    }
+                    final List<RacunSeznamItem> finalOdprti = odprtiObNapaki;
                     mainHandler.post(() -> {
                         binding.pbLoading.setVisibility(View.GONE);
                         if (res != null && res.getFault() != null && !res.getFault().isEmpty()) {
-                            Toast.makeText(requireContext(), "Obračun NI izveden: " + res.getFault(), Toast.LENGTH_LONG).show();
-                        } else if (res != null && res.getPrintBytes() != null && res.getPrintBytes().length > 0) {
+                            StringBuilder msg = new StringBuilder();
+                            msg.append(res.getFault());
+                            if (finalOdprti != null && !finalOdprti.isEmpty()) {
+                                msg.append("\n\nOdprti računi (").append(finalOdprti.size()).append("):\n");
+                                for (RacunSeznamItem r : finalOdprti) {
+                                    String m = (r.getMarker() != null && !r.getMarker().isEmpty()) ? r.getMarker() : ("#" + r.getRacunId());
+                                    BigDecimal z = r.getZnesek() != null ? r.getZnesek() : BigDecimal.ZERO;
+                                    msg.append("• ").append(m)
+                                       .append(" (R:").append(r.getRacunId()).append(") - ")
+                                       .append(String.format(Locale.GERMAN, "%.2f €", z)).append("\n");
+                                }
+                            }
+                            new AlertDialog.Builder(requireContext())
+                                    .setTitle("Obračun NI izveden")
+                                    .setMessage(msg.toString().trim())
+                                    .setPositiveButton("V redu", null)
+                                    .show();
+                        } else if (!g.isObracunBrezIzpisa() && res != null && res.getPrintBytes() != null && res.getPrintBytes().length > 0) {
                             BluetoothPrintHelper.printReceiptBytes(requireContext(), res.getPrintBytes(), new BluetoothPrintHelper.OnPrintListener() {
                                 @Override public void onStart() {
                                     Toast.makeText(requireContext(), "Tiskanje obračuna...", Toast.LENGTH_SHORT).show();
@@ -1127,7 +1332,8 @@ public class RacuniFragment extends Fragment implements RacunSeznamAdapter.OnIte
                             RosKasaSoapClient.vpisKronologijeAsync(serverUrl, token, prefs.getMobileId(), "OBRAČUN BLAGAJNE KONČAN za: " + tocilnicaId, g.getTekocaOsebaId(), tocilnicaId);
                             loadRacuniFromApi();
                         } else {
-                            Toast.makeText(requireContext(), "Obračun končan.", Toast.LENGTH_SHORT).show();
+                            RosKasaSoapClient.vpisKronologijeAsync(serverUrl, token, prefs.getMobileId(), "OBRAČUN BLAGAJNE KONČAN za: " + tocilnicaId, g.getTekocaOsebaId(), tocilnicaId);
+                            Toast.makeText(requireContext(), g.isObracunBrezIzpisa() ? "Obračun zaključen (brez izpisa)." : "Obračun končan.", Toast.LENGTH_SHORT).show();
                             loadRacuniFromApi();
                         }
                     });
@@ -1248,7 +1454,7 @@ public class RacuniFragment extends Fragment implements RacunSeznamAdapter.OnIte
             prefs.setActiveRacunId(item.getRacunId());
             prefs.setActiveMarker(item.getMarker());
             Globals.getInstance().setCurrentRacun(null);
-            Toast.makeText(requireContext(), "Nalaganje računa #" + item.getRacunId() + " za urejanje...", Toast.LENGTH_SHORT).show();
+            // [DEBUG-TOAST] Toast.makeText(requireContext(), "Nalaganje računa #" + item.getRacunId() + " za urejanje...", Toast.LENGTH_SHORT).show();
         }
 
         if (getActivity() instanceof MainActivity) {

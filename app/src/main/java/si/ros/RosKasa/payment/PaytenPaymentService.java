@@ -26,6 +26,144 @@ public class PaytenPaymentService {
         void onCanceled();
     }
 
+    public interface PaytenLaunchCallback {
+        void onProceedLaunch();
+        void onRecoverConfirmed(PaytenResponse confirmedResp);
+        void onBlocked(String message);
+    }
+
+    /**
+     * Preveri ali je PayTen transakcija trenutno v teku (s 60s varovalom proti trajni blokadi,
+     * skladno z Delphi uPayTen.IsPayTenInTransaction).
+     */
+    public static boolean isPayTenInTransaction(Context context) {
+        Globals g = Globals.getInstance();
+        if (!g.isPayTenA()) {
+            return false;
+        }
+        if (g.isPayTenIntransaction()) {
+            PaymentRecoveryManager.PaytenPendingInfo pending = PaymentRecoveryManager.tryGetPaytenPendingPayment(context);
+            if (pending.isValid() && pending.elapsedSec >= PaymentRecoveryManager.PAYTEN_COOLDOWN_STRICT_SEC) {
+                g.setPayTenIntransaction(false);
+            }
+        }
+        return g.isPayTenIntransaction();
+    }
+
+    /**
+     * 5-stopenjska zaščita pred podvojenim bremenjenjem in crash recovery pred zagonom PayTen purchase intenta
+     * (skladno z Delphi uPayTen.PayTenAPI2).
+     */
+    public static void prepareAndCheckPurchase(Context context, int racunId, int placiloId, BigDecimal amount,
+                                               PaytenLaunchCallback callback) {
+        if (callback == null) return;
+        Globals g = Globals.getInstance();
+        if (!g.isPayTenA()) {
+            callback.onBlocked("PayTen ni vklopljen.");
+            return;
+        }
+
+        final String reqRacunIdStr = String.valueOf(racunId);
+
+        // 1. Preverjanje aktivnega intenta v pomnilniku (s 60s varovalom)
+        if (isPayTenInTransaction(context)) {
+            g.vpisiKronologijo("PAYTEN INTENT BLOKIRAN: R:" + reqRacunIdStr + " Razlog:V_TEKU");
+            callback.onBlocked("Plačilo PayTen je že v teku. Počakajte na zaključek.");
+            return;
+        }
+
+        // 2. Trajna kontrola SharedPreferences in časovno varovalo (60s / 180s)
+        PaymentRecoveryManager.PaytenPendingInfo pending = PaymentRecoveryManager.tryGetPaytenPendingPayment(context);
+        if (pending.isValid()) {
+            if (reqRacunIdStr.equals(pending.racunId)) {
+                // A: Plačilo za ta račun je bilo na POS terminalu že odobreno, a sinhronizacija ni zaključena
+                if (pending.state == PaymentRecoveryManager.PAYTEN_STATE_POS_CONFIRMED
+                        || pending.state == PaymentRecoveryManager.PAYTEN_STATE_LOCAL_RECORDED) {
+                    g.vpisiKronologijo("PAYTEN INTENT BLOKIRAN: R:" + reqRacunIdStr + " Razlog:ZE_POTRJENO_NA_POS_STATE_" + pending.state);
+                    PaytenResponse confirmedResp = new PaytenResponse();
+                    int[] confirmedState = new int[1];
+                    if (PaymentRecoveryManager.tryGetConfirmedPaytenTransaction(context, confirmedResp, confirmedState)
+                            && confirmedResp.getpRacunId() == racunId) {
+                        callback.onRecoverConfirmed(confirmedResp);
+                        return;
+                    }
+                    callback.onBlocked("Za ta račun je plačilo PayTen že potrjeno na POS terminalu. Ponovno plačilo ni dovoljeno.");
+                    return;
+                }
+
+                // B: Plačilo za ta račun je že zaključeno
+                if (pending.state == PaymentRecoveryManager.PAYTEN_STATE_COMPLETED) {
+                    g.vpisiKronologijo("PAYTEN INTENT BLOKIRAN: R:" + reqRacunIdStr + " Razlog:ZE_PLACANO_SHARED_PREFS");
+                    callback.onBlocked("Za ta račun je plačilo PayTen že izvedeno! Ponovno plačilo ni dovoljeno.");
+                    return;
+                }
+
+                // C: Prejšnji intent je v stanju PENDING_POS
+                if (pending.state == PaymentRecoveryManager.PAYTEN_STATE_PENDING_POS) {
+                    if (pending.elapsedSec < PaymentRecoveryManager.PAYTEN_COOLDOWN_STRICT_SEC) {
+                        g.vpisiKronologijo("PAYTEN INTENT BLOKIRAN: R:" + reqRacunIdStr + " Razlog:CASOVNI_PRAG_" + pending.elapsedSec + "s");
+                        callback.onBlocked("Plačilo PayTen za račun R:" + reqRacunIdStr + " je še v teku (" + pending.elapsedSec + "s). Počakajte na POS terminal.");
+                        return;
+                    } else if (pending.elapsedSec <= PaymentRecoveryManager.PAYTEN_COOLDOWN_MAX_SEC) {
+                        // Varnostni dialog (60-180s): ker PayTen nima LAST_TRANSACTION, vprašamo natakarja
+                        g.vpisiKronologijo("PAYTEN INTENT DIALOG: R:" + reqRacunIdStr + " PretekliCas:" + pending.elapsedSec + "s");
+                        String msg = String.format(Locale.GERMANY,
+                                "Za račun R:%s je bilo pred %d sekundami že sproženo plačilo na POS terminalu (%.2f €).\n" +
+                                        "Ali je stranka kartico že uspešno prislonila in je bilo plačilo na POS odobreno?",
+                                reqRacunIdStr, pending.elapsedSec, amount != null ? amount : BigDecimal.ZERO);
+                        new androidx.appcompat.app.AlertDialog.Builder(context)
+                                .setTitle("Potrditev PayTen plačila")
+                                .setMessage(msg)
+                                .setCancelable(false)
+                                .setPositiveButton("Da", (d, w) -> {
+                                    g.vpisiKronologijo("PAYTEN ROCNA POTRDITEV: R:" + reqRacunIdStr + " UporabnikPotrdilUspeh:DA PretekliCas:" + pending.elapsedSec + "s");
+                                    PaytenResponse manualResp = new PaytenResponse();
+                                    manualResp.setpRacunId(racunId);
+                                    manualResp.setpPlaciloId(placiloId);
+                                    manualResp.setpZnesek(amount);
+                                    manualResp.setZnesekPOS(amount);
+                                    manualResp.setAuthorizedAmount(amount != null ? amount.toPlainString() : "0");
+                                    manualResp.setPaymentSolutionReference("MANUAL-" + reqRacunIdStr);
+                                    manualResp.setPaymentIdentificator("MANUAL-" + reqRacunIdStr);
+                                    manualResp.setpOperacija("purchase");
+                                    manualResp.setResult("OK");
+                                    manualResp.setCode("00");
+                                    PaymentRecoveryManager.saveConfirmedPaytenTransaction(context, manualResp, PaymentRecoveryManager.PAYTEN_STATE_POS_CONFIRMED);
+                                    callback.onRecoverConfirmed(manualResp);
+                                })
+                                .setNegativeButton("Ne", (d, w) -> {
+                                    g.vpisiKronologijo("PAYTEN ROCNA SPROSTITEV: R:" + reqRacunIdStr + " UporabnikPotrdilNeuspeh:DA PretekliCas:" + pending.elapsedSec + "s");
+                                    PaymentRecoveryManager.clearPaytenPendingPayment(context);
+                                    callback.onProceedLaunch();
+                                })
+                                .show();
+                        return;
+                    } else {
+                        // Več kot 180 sekund: samodejna sprostitev zapore
+                        g.vpisiKronologijo("PAYTEN AVTOMATSKA SPROSTITEV: R:" + reqRacunIdStr + " PretekliCas:" + pending.elapsedSec + "s (>180s)");
+                        PaymentRecoveryManager.clearPaytenPendingPayment(context);
+                    }
+                }
+            } else {
+                // Drug račun: če je na POS terminalu še aktivna transakcija (< 60s), zavrnemo
+                if (pending.state == PaymentRecoveryManager.PAYTEN_STATE_PENDING_POS
+                        && pending.elapsedSec < PaymentRecoveryManager.PAYTEN_COOLDOWN_STRICT_SEC) {
+                    g.vpisiKronologijo("PAYTEN INTENT BLOKIRAN: R:" + reqRacunIdStr + " Razlog:V_TEKU_DRUG_RACUN_R:" + pending.racunId + "_" + pending.elapsedSec + "s");
+                    callback.onBlocked("Plačilo PayTen za drug račun (R:" + pending.racunId + ") je še v teku (" + pending.elapsedSec + "s). Počakajte na zaključek.");
+                    return;
+                } else {
+                    if (pending.state == PaymentRecoveryManager.PAYTEN_STATE_POS_CONFIRMED
+                            || pending.state == PaymentRecoveryManager.PAYTEN_STATE_LOCAL_RECORDED) {
+                        g.vpisiKronologijo("PAYTEN OPOZORILO: Nov nakup za R:" + reqRacunIdStr + " čisti stanje prejšnjega R:" + pending.racunId + " State:" + pending.state);
+                    }
+                    PaymentRecoveryManager.clearPaytenPendingPayment(context);
+                }
+            }
+        }
+
+        callback.onProceedLaunch();
+    }
+
     public static Intent buildPaymentIntent(Context context, int racunId, int pozicijaId, BigDecimal amount,
                                             String operation, String authCode) {
         Globals g = Globals.getInstance();
@@ -57,9 +195,12 @@ public class PaytenPaymentService {
         intent.addFlags(Intent.FLAG_ACTIVITY_REORDER_TO_FRONT);
         intent.putExtra("REQUEST_JSON_STRING", jsonRequest);
 
-        // Shrani začasno sejo za okrevanje
-        PaymentRecoveryManager.clearPendingPayment(context);
-        PaymentRecoveryManager.savePendingPayment(context, "", "", "", transactionId, String.valueOf(racunId), String.valueOf(amountCents));
+        // Shrani stanje PENDING_POS v Payten recovery shrambo (samo za purchase, skladno z Delphi uPayTen.pas)
+        if ("purchase".equalsIgnoreCase(opClass)) {
+            PaymentRecoveryManager.clearPaytenPendingPayment(context);
+            PaymentRecoveryManager.savePaytenPendingPayment(context, transactionId, String.valueOf(racunId), String.valueOf(amountCents), PaymentRecoveryManager.PAYTEN_STATE_PENDING_POS);
+            g.vpisiKronologijo("PAYTEN SHRAMBA STANJA: R:" + racunId + " NovoStanje:PENDING");
+        }
         g.setPayTenIntransaction(true);
         g.setZadnjiPayTenARacunId(racunId);
         g.setZadnjaPayTenAPozicijaId(pozicijaId);
@@ -117,41 +258,46 @@ public class PaytenPaymentService {
 
         try {
             JSONObject root = new JSONObject(jsonString);
-            if (root.has("response")) {
-                JSONObject responseObj = root.getJSONObject("response");
-                if (responseObj.has("paymentIdentificator")) {
-                    resp.setPaymentIdentificator(responseObj.optString("paymentIdentificator", ""));
-                    resp.setPaymentSolutionReference(resp.getPaymentIdentificator());
+            JSONObject responseObj = optObjectCI(root, "response");
+            if (responseObj != null) {
+                String payId = optStringCI(responseObj, "paymentIdentificator");
+                if (!payId.isEmpty()) {
+                    resp.setPaymentIdentificator(payId);
+                    resp.setPaymentSolutionReference(payId);
                 }
 
-                if (responseObj.has("status")) {
-                    JSONObject statusObj = responseObj.getJSONObject("status");
-                    resp.setCode(statusObj.optString("code", ""));
-                    resp.setMessage(statusObj.optString("message", ""));
+                JSONObject statusObj = optObjectCI(responseObj, "status");
+                if (statusObj != null) {
+                    resp.setCode(optStringCI(statusObj, "code"));
+                    resp.setMessage(optStringCI(statusObj, "message"));
                     resp.setpMessage(resp.getMessage());
 
                     if ("00".equals(resp.getCode())) {
                         resp.setResult("OK");
-                        String receiptDataStr = statusObj.optString("receiptData", "");
+                        String receiptDataStr = optStringCI(statusObj, "receiptData");
                         resp.setpReceiptData(receiptDataStr);
 
                         if (!receiptDataStr.isEmpty()) {
                             JSONObject receiptObj = new JSONObject(receiptDataStr);
-                            resp.setApplicationIdentifier(receiptObj.optString("aid", ""));
-                            resp.setAuthorizedAmount(receiptObj.optString("amount", ""));
-                            resp.setTipAmount(receiptObj.optString("tipAmount", ""));
-                            resp.setApplicationLabel(receiptObj.optString("applicationLabel", ""));
-                            resp.setpAuthorizationCode(receiptObj.optString("authorizationCode", ""));
-                            resp.setBankName(receiptObj.optString("bankName", ""));
-                            resp.setCardNumber(receiptObj.optString("cardNumber", ""));
-                            resp.setTimestamp(receiptObj.optString("dateTime", ""));
-                            resp.setMerchantId(receiptObj.optString("merchantId", ""));
-                            resp.setMerchant(receiptObj.optString("merchantName", ""));
-                            resp.setOperationName(receiptObj.optString("operationName", ""));
-                            resp.setResponse(receiptObj.optString("response", ""));
-                            resp.setRrn(receiptObj.optString("rrn", ""));
-                            resp.setStatus(receiptObj.optString("status", ""));
-                            resp.setTerminalId(receiptObj.optString("terminalId", ""));
+                            resp.setApplicationIdentifier(optStringCI(receiptObj, "aid"));
+                            resp.setAuthorizedAmount(optStringCI(receiptObj, "amount"));
+                            String tipStr = optStringCI(receiptObj, "tipAmount");
+                            if (tipStr.isEmpty()) tipStr = optStringCI(receiptObj, "tip");
+                            if (tipStr.isEmpty()) tipStr = optStringCI(statusObj, "tipAmount");
+                            if (tipStr.isEmpty()) tipStr = optStringCI(responseObj, "tipAmount");
+                            resp.setTipAmount(tipStr);
+                            resp.setApplicationLabel(optStringCI(receiptObj, "applicationLabel"));
+                            resp.setpAuthorizationCode(optStringCI(receiptObj, "authorizationCode"));
+                            resp.setBankName(optStringCI(receiptObj, "bankName"));
+                            resp.setCardNumber(optStringCI(receiptObj, "cardNumber"));
+                            resp.setTimestamp(optStringCI(receiptObj, "dateTime"));
+                            resp.setMerchantId(optStringCI(receiptObj, "merchantId"));
+                            resp.setMerchant(optStringCI(receiptObj, "merchantName"));
+                            resp.setOperationName(optStringCI(receiptObj, "operationName"));
+                            resp.setResponse(optStringCI(receiptObj, "response"));
+                            resp.setRrn(optStringCI(receiptObj, "rrn"));
+                            resp.setStatus(optStringCI(receiptObj, "status"));
+                            resp.setTerminalId(optStringCI(receiptObj, "terminalId"));
 
                             // Parsiranje zneska v BigDecimal
                             try {
@@ -202,6 +348,32 @@ public class PaytenPaymentService {
         }
 
         return resp;
+    }
+
+    private static String optStringCI(JSONObject obj, String key) {
+        if (obj == null || key == null) return "";
+        if (obj.has(key)) return obj.optString(key, "");
+        java.util.Iterator<String> it = obj.keys();
+        while (it.hasNext()) {
+            String k = it.next();
+            if (key.equalsIgnoreCase(k)) {
+                return obj.optString(k, "");
+            }
+        }
+        return "";
+    }
+
+    private static JSONObject optObjectCI(JSONObject obj, String key) {
+        if (obj == null || key == null) return null;
+        if (obj.has(key)) return obj.optJSONObject(key);
+        java.util.Iterator<String> it = obj.keys();
+        while (it.hasNext()) {
+            String k = it.next();
+            if (key.equalsIgnoreCase(k)) {
+                return obj.optJSONObject(k);
+            }
+        }
+        return null;
     }
 
     private static void addFormattedLine(StringBuilder sb, String label, String value) {

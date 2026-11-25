@@ -1,0 +1,56 @@
+[
+  {
+    "scenario": "TC01_SIMPLE_GOTOVINA",
+    "racun_id": 61956,
+    "status": "DONE"
+  },
+  {
+    "scenario": "TC02",
+    "status": "ERROR",
+    "error": "Timeout waiting for frmPartner visible; last state={'racunId': 61957, 'marker': 'Miza 58', 'tabIndex': 2, 'activeTab': 'TabRacPlaci', 'pozicCount': 1, 'placiCount': 0, 'racGlavaCount': 3, 'layoutEPVisible': False, 'partnerVisible': False, 'frmPartnerVisible': False, 'partnerCount': 0, 'sobeVisible': False, 'zdruziVisible': False, 'splitVisible': False}"
+  },
+  {
+    "scenario": "TC03_LESTVICA_GOST_HOTELA",
+    "racun_id": 61957,
+    "status": "DONE"
+  },
+  {
+    "scenario": "TC04_DOBAVNICA_ROS",
+    "racun_id": 61958,
+    "partner_id": 41125,
+    "status": "DONE"
+  },
+  {
+    "scenario": "TC05_DOBAVNICA_PRVA_OSEBNA_ZAVAROVALNICA",
+    "racun_id": 61959,
+    "partner_id": 654330,
+    "status": "DONE"
+  },
+  {
+    "scenario": "TC06_POPUST_99_CELOTEN_RACUN",
+    "racun_id": 61960,
+    "status": "DONE"
+  },
+  {
+    "scenario": "TC07_POPUST_1_POZICIJA",
+    "racun_id": 61961,
+    "status": "DONE"
+  },
+  {
+    "scenario": "TC08_ZDRUZI_IN_SPLIT",
+    "racun_a": 61962,
+    "racun_b": 61963,
+    "status": "DONE"
+  },
+  {
+    "scenario": "TC09_STORNO_Z_NOVIM_RACUNOM",
+    "source_racun_id": 61956,
+    "create_new": true,
+    "status": "DONE"
+  },
+  {
+    "scenario": "TC10",
+    "status": "ERROR",
+    "error": "TC10 requires TC02_racun_id"
+  }
+]

@@ -77,11 +77,21 @@ public class MizeFragment extends Fragment {
             }
         });
 
+        binding.btnOdjava.setVisibility(Globals.getInstance().ispLogout() ? View.VISIBLE : View.GONE);
         binding.btnOdjava.setOnClickListener(v -> {
+            Globals.getInstance().vpisiKronologijo("Odjava osebe (Mize)");
+            Globals.getInstance().posljiOfflineKronologijo();
             Globals.getInstance().setTekocaOseba(null);
             if (getActivity() instanceof MainActivity) {
                 ((MainActivity) getActivity()).navigateToFragment(new LoginFragment());
             }
+        });
+
+        // Dolgi klik na ime natakarja ročno razveljavi disk cache šifrantov (ekvivalent Delphi btnRacprenos)
+        binding.tvNatakarInfo.setOnLongClickListener(v -> {
+            si.ros.RosKasa.cache.LocalCacheManager.invalidateLargeSifrantiCache(requireContext());
+            Toast.makeText(requireContext(), "Predpomnilnik šifrantov razveljavljen — ob naslednji prijavi/odprtju se bodo osvežili s strežnika.", Toast.LENGTH_LONG).show();
+            return true;
         });
 
         binding.btnMarker.setOnClickListener(v -> odpriNovMarkerNarocilo());
@@ -109,8 +119,9 @@ public class MizeFragment extends Fragment {
         Globals g = Globals.getInstance();
         List<Integer> rajoni = g.getCachedRajoni();
 
-        if (rajoni.isEmpty() && !g.isRajoni()) {
+        if (!g.isRajoni() || rajoni.size() <= 1) {
             binding.scrollRajoni.setVisibility(View.GONE);
+            selectedRajon = 0;
             return;
         }
         binding.scrollRajoni.setVisibility(View.VISIBLE);
@@ -122,7 +133,9 @@ public class MizeFragment extends Fragment {
             addRajonButton("R " + r, r);
         }
 
-        if (g.getRajonDefault() > 0 && rajoni.contains(g.getRajonDefault())) {
+        if (g.getSelectedRajon() >= 0 && (g.getSelectedRajon() == 0 || rajoni.contains(g.getSelectedRajon()))) {
+            selectedRajon = g.getSelectedRajon();
+        } else if (g.getRajonDefault() > 0 && rajoni.contains(g.getRajonDefault())) {
             selectedRajon = g.getRajonDefault();
         } else {
             selectedRajon = 0;
@@ -145,6 +158,7 @@ public class MizeFragment extends Fragment {
         btn.setCornerRadius((int) (4 * getResources().getDisplayMetrics().density));
         btn.setOnClickListener(v -> {
             selectedRajon = rajonId;
+            Globals.getInstance().setSelectedRajon(rajonId);
             updateRajonButtonStyles();
             populateMizeGrid(lastLoadedOpenAccounts);
         });
@@ -183,7 +197,7 @@ public class MizeFragment extends Fragment {
             prefs.setActiveMarker(miza.naziv);
             prefs.setActiveRacunId(miza.racunId);
             Globals.getInstance().setActiveRacunId(miza.racunId);
-            Toast.makeText(requireContext(), "Izbrana " + miza.naziv + (miza.racunId > 0 ? " (Račun #" + miza.racunId + ")" : " (Nova miza)"), Toast.LENGTH_SHORT).show();
+            // [DEBUG-TOAST] Toast.makeText(requireContext(), "Izbrana " + miza.naziv + (miza.racunId > 0 ? " (Račun #" + miza.racunId + ")" : " (Nova miza)"), Toast.LENGTH_SHORT).show();
             if (getActivity() instanceof MainActivity) {
                 if (miza.isPlacano) {
                     ((MainActivity) getActivity()).navigateToFragment(new PlacilaFragment());
@@ -221,13 +235,20 @@ public class MizeFragment extends Fragment {
 
         executor.execute(() -> {
             try {
-                // Klic getRacuniSeznam (STATUS=1 = odprti računi, OD_DATUM za zadnje 3 dni - enako kot RacuniFragment)
+                // Klic getRacuniSeznam s filtrom po osebi (SVidiVsaNarocila / OdpriVseRacune) in STRM_ID
+                Globals g = Globals.getInstance();
+                int pOseba = (g.isDovoljeno(si.ros.RosKasa.models.PraviceConsts.SVidiVsaNarocila) || g.isOdpriVseRacune())
+                        ? 0 : g.getTekocaOsebaId();
+                int strmId = (g.getTocilnicaId() != null && g.getTocilnicaId() > 0)
+                        ? g.getTocilnicaId() : prefs.getTocilnicaId();
                 List<RacunSeznamItem> openAccounts = RosKasaSoapClient.getRacuniSeznam(
                         prefs.getServerUrl(),
                         prefs.getToken(),
                         prefs.getMobileId(),
                         1,
-                        odDatum
+                        odDatum,
+                        pOseba,
+                        strmId
                 );
 
                 mainHandler.post(() -> {
@@ -380,8 +401,20 @@ public class MizeFragment extends Fragment {
             }
         }
 
-        // 2. Obdelava preostalih neobdelanih odprtih računov (če gledamo "Vsi", selectedRajon == 0)
-        if (selectedRajon == 0) {
+        // 2. Obdelava dinamičnih prostih markerjev (rajon < 0): vedno vidni pri vseh rajonih!
+        // Preskočimo le račune, ki pripadajo znani mizi iz drugega rajona.
+        Set<String> knownTableMarkers = new HashSet<>();
+        if (cachedMize != null) {
+            for (MizaTp m : cachedMize) {
+                if (m != null && m.getNaziv() != null) {
+                    String mn = m.getNaziv().trim().toLowerCase(Locale.getDefault());
+                    knownTableMarkers.add(mn);
+                    String mNum = mn.replaceAll("[^0-9]", "");
+                    if (!mNum.isEmpty()) knownTableMarkers.add(mNum);
+                }
+            }
+        }
+        {
             int emptyMarkerIndex = 1;
 
             for (RacunSeznamItem acc : activeOpenAccounts) {
@@ -390,6 +423,14 @@ public class MizeFragment extends Fragment {
                 }
 
                 String rawMarker = (acc.getMarker() != null) ? acc.getMarker().trim() : "";
+                String upperMarker = rawMarker.toUpperCase(Locale.ROOT);
+                if (upperMarker.startsWith("Z:") || upperMarker.contains("ZDRU")) {
+                    continue;
+                }
+                // Če gledamo specifičen rajon in račun pripada fiksni mizi iz drugega rajona, ga ne prikažemo
+                if (selectedRajon != 0 && !rawMarker.isEmpty() && knownTableMarkers.contains(rawMarker.toLowerCase(Locale.getDefault()))) {
+                    continue;
+                }
                 String buttonName;
 
                 if (rawMarker.isEmpty()) {
@@ -445,7 +486,7 @@ public class MizeFragment extends Fragment {
             Globals.getInstance().setActiveRacunId(0);
             Globals.getInstance().setCurrentRacun(null);
 
-            Toast.makeText(requireContext(), "Odprto naročilo za marker: " + clean, Toast.LENGTH_SHORT).show();
+            // [DEBUG-TOAST] Toast.makeText(requireContext(), "Odprto naročilo za marker: " + clean, Toast.LENGTH_SHORT).show();
             if (getActivity() instanceof MainActivity) {
                 ((MainActivity) getActivity()).navigateToFragment(new NarocilaFragment());
             }

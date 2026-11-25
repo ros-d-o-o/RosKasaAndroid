@@ -60,6 +60,8 @@ public class HotelSobeDialog {
         EditText etSearch = dialog.findViewById(R.id.etSearchSobe);
         Button btnSearch = dialog.findViewById(R.id.btnSearchSobe);
         Button btnSearchDest = dialog.findViewById(R.id.btnSearchDestinacija);
+        Button btnSkupine = dialog.findViewById(R.id.btnHotelSkupine);
+        Button btnObroki = dialog.findViewById(R.id.btnHotelObroki);
         ProgressBar pbLoading = dialog.findViewById(R.id.pbSobeLoading);
         TextView tvEmptyMessage = dialog.findViewById(R.id.tvEmptySobeMessage);
         RecyclerView rvSobe = dialog.findViewById(R.id.rvSobe);
@@ -82,8 +84,12 @@ public class HotelSobeDialog {
             } else {
                 selectedItem[0] = item;
                 btnPotrdi.setEnabled(true);
-                String guest = (item.getImeGosta() != null && !item.getImeGosta().isEmpty()) ? (" - " + item.getImeGosta()) : "";
-                btnPotrdi.setText("Potrdi (Soba " + item.getProstorId() + guest + ")");
+                if (item.getHisCenikAi() > 0) {
+                    btnPotrdi.setText("Potrdi (Skupina: " + item.getImeGosta() + ")");
+                } else {
+                    String guest = (item.getImeGosta() != null && !item.getImeGosta().isEmpty()) ? (" - " + item.getImeGosta()) : "";
+                    btnPotrdi.setText("Potrdi (Soba " + item.getProstorId() + guest + ")");
+                }
             }
         });
 
@@ -220,15 +226,138 @@ public class HotelSobeDialog {
             return false;
         });
 
+        // Gumb SKUPINE (getListaSkupin -> HIS_CENIK_AI)
+        if (btnSkupine != null) {
+            btnSkupine.setOnClickListener(v -> {
+                pbLoading.setVisibility(View.VISIBLE);
+                tvEmptyMessage.setVisibility(View.GONE);
+                rvSobe.setVisibility(View.GONE);
+                selectedItem[0] = null;
+                btnPotrdi.setEnabled(false);
+
+                executor.execute(() -> {
+                    try {
+                        List<Integer> obratiList = new ArrayList<>();
+                        String hisObrati = globals.getHisObrati();
+                        if (hisObrati != null && !hisObrati.trim().isEmpty()) {
+                            for (String part : hisObrati.split("[,;\\s]+")) {
+                                try {
+                                    int id = Integer.parseInt(part.trim());
+                                    if (id > 0) obratiList.add(id);
+                                } catch (Exception ignored) {}
+                            }
+                        }
+                        if (obratiList.isEmpty() && globals.getHisObrat() > 0) {
+                            obratiList.add(globals.getHisObrat());
+                        }
+
+                        List<RosKasaSoapClient.SkupinaItem> skupine = RosKasaSoapClient.getListaSkupin(
+                                prefs.getServerUrl(), prefs.getToken(), obratiList);
+
+                        List<KartprijTp> mapped = new ArrayList<>();
+                        if (skupine != null) {
+                            for (RosKasaSoapClient.SkupinaItem s : skupine) {
+                                KartprijTp k = new KartprijTp();
+                                k.setHisCenikAi(s.cenikAi);
+                                k.setPrijavaId(0);
+                                k.setProstorId(s.cenikAi);
+                                k.setImeGosta(s.skupinaNaziv);
+                                k.setNazivStoritve(s.storitevNaziv + (s.steviloGostov > 0 ? " (" + s.steviloGostov + " gostov)" : ""));
+                                k.setNazivStrm("SKUPINA (Rez: " + s.rezervacijaId + ")");
+                                k.setHisCenikNaziv(s.skupinaNaziv + (!s.storitevNaziv.isEmpty() ? " / " + s.storitevNaziv : ""));
+                                mapped.add(k);
+                            }
+                        }
+
+                        mainHandler.post(() -> {
+                            pbLoading.setVisibility(View.GONE);
+                            sobeList.clear();
+                            if (!mapped.isEmpty()) {
+                                sobeList.addAll(mapped);
+                                adapter.notifyDataSetChanged();
+                                rvSobe.setVisibility(View.VISIBLE);
+                                tvEmptyMessage.setVisibility(View.GONE);
+                            } else {
+                                rvSobe.setVisibility(View.GONE);
+                                tvEmptyMessage.setVisibility(View.VISIBLE);
+                                tvEmptyMessage.setText("Ni najdenih aktivnih skupin.");
+                            }
+                        });
+                    } catch (Exception e) {
+                        mainHandler.post(() -> {
+                            pbLoading.setVisibility(View.GONE);
+                            tvEmptyMessage.setVisibility(View.VISIBLE);
+                            tvEmptyMessage.setText("Napaka pri pridobivanju skupin: " + e.getMessage());
+                        });
+                    }
+                });
+            });
+        }
+
+        // Gumb OBROKI (getObroki -> Zajtrk / Kosilo / Večerja)
+        if (btnObroki != null) {
+            btnObroki.setOnClickListener(v -> {
+                int prostorId = 0;
+                int obratId = globals.getHisObrat();
+                if (selectedItem[0] != null && selectedItem[0].getHisCenikAi() == 0 && selectedItem[0].getProstorId() > 0) {
+                    prostorId = selectedItem[0].getProstorId();
+                    if (selectedItem[0].getObratId() > 0) obratId = selectedItem[0].getObratId();
+                } else {
+                    String q = etSearch.getText() != null ? etSearch.getText().toString().trim() : "";
+                    try { prostorId = Integer.parseInt(q); } catch (Exception ignored) {}
+                }
+                if (prostorId <= 0) {
+                    Toast.makeText(context, "Izberite sobo ali vnesite številko sobe za pregled obrokov!", Toast.LENGTH_SHORT).show();
+                    return;
+                }
+                final int finalProstorId = prostorId;
+                final int finalObratId = obratId;
+                pbLoading.setVisibility(View.VISIBLE);
+                executor.execute(() -> {
+                    try {
+                        String todayIso = new java.text.SimpleDateFormat("yyyy-MM-dd'T'00:00:00", Locale.US).format(new java.util.Date());
+                        List<RosKasaSoapClient.ObrokItem> obroki = RosKasaSoapClient.getObroki(
+                                prefs.getServerUrl(), prefs.getToken(), finalObratId, finalProstorId, todayIso);
+                        mainHandler.post(() -> {
+                            pbLoading.setVisibility(View.GONE);
+                            StringBuilder sb = new StringBuilder();
+                            if (obroki == null || obroki.isEmpty()) {
+                                sb.append("Za sobo ").append(finalProstorId).append(" danes ni zabeleženih obrokov.");
+                            } else {
+                                for (RosKasaSoapClient.ObrokItem o : obroki) {
+                                    sb.append(o.imeGosta != null && !o.imeGosta.isEmpty() ? o.imeGosta : "Gost")
+                                      .append("\n  Zajtrk: ").append(o.kolicinaZ)
+                                      .append(" | Kosilo: ").append(o.kolicinaK)
+                                      .append(" | Večerja: ").append(o.kolicinaV)
+                                      .append("\n\n");
+                                }
+                            }
+                            new androidx.appcompat.app.AlertDialog.Builder(context)
+                                    .setTitle("Obroki - Soba " + finalProstorId)
+                                    .setMessage(sb.toString().trim())
+                                    .setPositiveButton("V redu", null)
+                                    .show();
+                        });
+                    } catch (Exception e) {
+                        mainHandler.post(() -> {
+                            pbLoading.setVisibility(View.GONE);
+                            Toast.makeText(context, "Napaka pri pridobivanju obrokov: " + e.getMessage(), Toast.LENGTH_LONG).show();
+                        });
+                    }
+                });
+            });
+        }
+
         // NFC Listener Registration on MainActivity
         if (context instanceof MainActivity) {
             MainActivity mainAct = (MainActivity) context;
             mainAct.setOnNfcTagReadListener(cardInfo -> {
                 if (cardInfo != null && dialog.isShowing()) {
                     mainHandler.post(() -> {
-                        String code = (cardInfo.decimalId != null && !cardInfo.decimalId.isEmpty())
-                                ? cardInfo.decimalId
-                                : (cardInfo.hexId != null ? cardInfo.hexId : "");
+                        // Za NFC gosta v hotel sobah preferiramo HEX UID (skladno z Delphi FormSobe vo=2)
+                        String code = (cardInfo.hexId != null && !cardInfo.hexId.isEmpty())
+                                ? cardInfo.hexId
+                                : (cardInfo.decimalId != null ? cardInfo.decimalId : "");
                         etSearch.setText(code);
                         Toast.makeText(context, "NFC kartica zaznana: " + code, Toast.LENGTH_SHORT).show();
                         performSearch.run();
@@ -288,7 +417,11 @@ public class HotelSobeDialog {
         @Override
         public void onBindViewHolder(@NonNull ViewHolder holder, int position) {
             KartprijTp item = items.get(position);
-            holder.tvRoom.setText("Soba: " + item.getProstorId());
+            if (item.getHisCenikAi() > 0) {
+                holder.tvRoom.setText("Skupina #" + item.getHisCenikAi());
+            } else {
+                holder.tvRoom.setText("Soba: " + item.getProstorId());
+            }
             holder.tvObrat.setText(item.getNazivStrm());
             holder.tvGuest.setText(item.getImeGosta());
             holder.tvService.setText(item.getNazivStoritve());

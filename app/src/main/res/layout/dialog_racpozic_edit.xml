@@ -35,6 +35,7 @@
 
         <!-- Količina z gumboma -1 in +1 -->
         <TextView
+            android:id="@+id/tvKolicinaLabel"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:text="KOLIČINA"
@@ -255,6 +256,17 @@
                 android:text="OPOMBA"
                 android:textSize="12sp"
                 android:backgroundTint="@color/pos_accent_blue"
+                android:textColor="#FFFFFF" />
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btnReceptura"
+                style="@style/PosButtonStyle"
+                android:layout_width="wrap_content"
+                android:layout_height="44dp"
+                android:layout_marginStart="6dp"
+                android:text="REC."
+                android:textSize="12sp"
+                android:backgroundTint="#6A1B9A"
                 android:textColor="#FFFFFF" />
         </LinearLayout>
 

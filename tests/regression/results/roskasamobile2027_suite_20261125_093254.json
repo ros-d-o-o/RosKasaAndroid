@@ -1,0 +1,12 @@
+[
+  {
+    "scenario": "TC02",
+    "status": "ERROR",
+    "error": "Timeout waiting for payment added via KlikniPlaciloCmd; last state={'racunId': 61978, 'marker': 'Miza 58', 'tabIndex': 2, 'activeTab': 'TabRacPlaci', 'pozicCount': 1, 'placiCount': 0, 'racGlavaCount': 3, 'layoutEPVisible': False, 'partnerVisible': False, 'frmPartnerVisible': False, 'partnerCount': 0, 'sobeVisible': False, 'zdruziVisible': False, 'splitVisible': False}"
+  },
+  {
+    "scenario": "TC10",
+    "status": "ERROR",
+    "error": "TC10 requires TC02_racun_id"
+  }
+]

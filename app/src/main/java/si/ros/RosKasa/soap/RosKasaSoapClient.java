@@ -594,6 +594,34 @@ public class RosKasaSoapClient {
                                 Log.d(TAG, "Naloženih CENIKVRVR sestavin paketov: " + vrvrList.size());
                             }
                         }
+                        if (cglSoap.hasProperty("CENIKVRCENE")) {
+                            Object cvrcObj = cglSoap.getProperty("CENIKVRCENE");
+                            if (cvrcObj instanceof SoapObject) {
+                                SoapObject cvrcSoap = (SoapObject) cvrcObj;
+                                int vrcCount = cvrcSoap.getPropertyCount();
+                                java.util.Map<String, BigDecimal> dnCeneMap = new java.util.HashMap<>();
+                                for (int k = 0; k < vrcCount; k++) {
+                                    Object itemObj = cvrcSoap.getProperty(k);
+                                    if (itemObj instanceof SoapObject) {
+                                        SoapObject cSoap = (SoapObject) itemObj;
+                                        String dnStr = getPropertyStringSafe(cSoap, "DN_ID");
+                                        String n4Str = getPropertyStringSafe(cSoap, "NIVO4_ID");
+                                        String cStr = getPropertyStringSafe(cSoap, "CENA");
+                                        if (cStr == null || cStr.trim().isEmpty()) {
+                                            cStr = getPropertyStringSafe(cSoap, "CENA1");
+                                        }
+                                        if (dnStr != null && n4Str != null && cStr != null) {
+                                            try {
+                                                BigDecimal dnCena = new BigDecimal(cStr.replace(",", ".").trim());
+                                                dnCeneMap.put(dnStr.trim() + "_" + n4Str.trim(), dnCena);
+                                            } catch (Exception ignored) {}
+                                        }
+                                    }
+                                }
+                                Globals.getInstance().setCachedCenikVrCene(dnCeneMap);
+                                Log.d(TAG, "Naloženih CENIKVRCENE cen za delovne naloge: " + dnCeneMap.size());
+                            }
+                        }
                     }
                 }
             }
@@ -647,10 +675,7 @@ public class RosKasaSoapClient {
             } catch (Exception ignored) {}
         }
 
-        if (cena.compareTo(BigDecimal.ZERO) == 0 && cena2.compareTo(BigDecimal.ZERO) != 0) {
-            cena = cena2;
-        }
-
+        // Ne prepisujemo CENA1 s CENA2 (skladno z Delphi MODELCENA2 = 1 vs 2)
         String nacinProdajeStr = getPropertyStringSafe(soap, "NACIN_PRODAJE");
         int nacinProdaje = 0;
         if (nacinProdajeStr != null) {
@@ -710,6 +735,30 @@ public class RosKasaSoapClient {
             try { item.davekProc = Double.parseDouble(davekStr); } catch (Exception ignored) {}
         }
 
+        String emStr = getPropertyStringSafe(soap, "ENOTA_MERE_ID");
+        if (emStr == null || emStr.trim().isEmpty()) {
+            emStr = getPropertyStringSafe(soap, "EM");
+        }
+        if (emStr != null) {
+            try { item.em = Integer.parseInt(emStr.trim()); } catch (Exception ignored) {}
+        }
+
+        String izpisNarStr = getPropertyStringSafe(soap, "IZPIS_NAROCILA");
+        if (izpisNarStr != null) {
+            try { item.izpisNarocila = Integer.parseInt(izpisNarStr.trim()); } catch (Exception ignored) {}
+        }
+
+        String stdStr = getPropertyStringSafe(soap, "STANDARD");
+        if (stdStr != null) {
+            item.standard = stdStr.trim();
+            item.niMoznaIzbira = "SKRIJ".equalsIgnoreCase(item.standard);
+        }
+
+        String cenikIdStr = getPropertyStringSafe(soap, "CENIK_ID");
+        if (cenikIdStr != null) {
+            try { item.cenikId = Integer.parseInt(cenikIdStr.trim()); } catch (Exception ignored) {}
+        }
+
         return item;
     }
 
@@ -765,6 +814,11 @@ public class RosKasaSoapClient {
         String cenikIdStr = getPropertyStringSafe(soap, "CENIK_ID");
         if (cenikIdStr != null) {
             try { item.setCenikId(Integer.parseInt(cenikIdStr)); } catch (Exception ignored) {}
+        }
+
+        String tarifaIdStr = getPropertyStringSafe(soap, "TARIFA_ID");
+        if (tarifaIdStr != null) {
+            try { item.setTarifaId(Integer.parseInt(tarifaIdStr)); } catch (Exception ignored) {}
         }
 
         return item;
@@ -1006,6 +1060,10 @@ public class RosKasaSoapClient {
     }
 
     public static List<RacunSeznamItem> getRacuniSeznam(String serverUrl, String token, String mobileId, int status, String odDatum) throws Exception {
+        return getRacuniSeznam(serverUrl, token, mobileId, status, odDatum, 0, 0);
+    }
+
+    public static List<RacunSeznamItem> getRacuniSeznam(String serverUrl, String token, String mobileId, int status, String odDatum, int osebaId, int strmId) throws Exception {
         String methodName = "getRacuniSeznam";
         String soapAction = NAMESPACE + "/" + methodName;
 
@@ -1015,7 +1073,13 @@ public class RosKasaSoapClient {
         if (odDatum != null && !odDatum.isEmpty()) {
             rq.addProperty("OD_DATUM", odDatum);
         }
+        if (osebaId > 0) {
+            rq.addProperty("OSEBA_ID", osebaId);
+        }
         rq.addProperty("STATUS", status);
+        if (strmId > 0) {
+            rq.addProperty("STRM_ID", strmId);
+        }
 
         request.addProperty("rq", rq);
         if (token != null && !token.isEmpty()) {
@@ -1774,6 +1838,27 @@ public class RosKasaSoapClient {
 
         String sklic = getPropertyStringSafe(soap, "SKLIC");
         if (sklic != null) pt.setSklic(sklic.trim());
+
+        String dsNaziv = getPropertyStringSafe(soap, "NAZIV_DAVCNASKUPINA");
+        if (dsNaziv != null && !dsNaziv.trim().isEmpty()) {
+            pt.setNazivDavcnaSkupina(dsNaziv.trim());
+        }
+        String dsNaslov = getPropertyStringSafe(soap, "NAS_ULICA_DAVCNASKUPINA");
+        if (dsNaslov != null && !dsNaslov.trim().isEmpty()) {
+            pt.setNasUlicaDavcnaSkupina(dsNaslov.trim());
+        }
+        String dsDavcna = getPropertyStringSafe(soap, "DAVCNASTSKUPINA");
+        if (dsDavcna != null && !dsDavcna.trim().isEmpty()) {
+            pt.setDavcnaStSkupina(dsDavcna.trim());
+        }
+
+        String davcnaSkupina = getPropertyStringSafe(soap, "DAVCNA_SKUPINA");
+        if (davcnaSkupina == null || davcnaSkupina.trim().isEmpty()) {
+            davcnaSkupina = getPropertyStringSafe(soap, "DAVCNA_SKUPINA_NAZIV");
+        }
+        if (davcnaSkupina != null && !davcnaSkupina.trim().isEmpty()) {
+            pt.setDavcnaSkupina(davcnaSkupina.trim());
+        }
 
         return pt;
     }
@@ -2749,12 +2834,25 @@ public class RosKasaSoapClient {
             try { item.setNivo4Id(Integer.parseInt(nivo4Str)); } catch (Exception ignored) {}
         }
 
-        String enotaStr = getPropertyStringSafe(soap, "ENOTA_PRODAJE");
+        String enotaStr = getPropertyStringSafe(soap, "ENOTA_PRODAJE_ID");
+        if (enotaStr == null || enotaStr.trim().isEmpty()) {
+            enotaStr = getPropertyStringSafe(soap, "ENOTA_PRODAJE");
+        }
         if (enotaStr != null) {
             try {
                 enotaStr = enotaStr.replace(",", ".").trim();
                 item.setEnotaProdaje(new BigDecimal(enotaStr));
             } catch (Exception ignored) {}
+        }
+
+        String kolStr = getPropertyStringSafe(soap, "KOLICINA");
+        if (kolStr != null) {
+            try { item.setKolicina(Integer.parseInt(kolStr.trim())); } catch (Exception ignored) {}
+        }
+
+        String dodatekStr = getPropertyStringSafe(soap, "DODATEK_ID");
+        if (dodatekStr != null) {
+            try { item.setDodatekId(Integer.parseInt(dodatekStr.trim())); } catch (Exception ignored) {}
         }
 
         return item;
@@ -3133,13 +3231,28 @@ public class RosKasaSoapClient {
     }
 
     public static RacunTp getRacun(String serverUrl, String token, int racunId) throws Exception {
+        return getRacun(serverUrl, token, racunId, 0, null);
+    }
+
+    /**
+     * Pridobi posamezen račun po RACUN_ID (tudi za STATUS=4 / obračunani računi za daljše obdobje maxDniNazaj).
+     * Ustreza Delphi: R16K.Servis.getRacuni(rqGetRacuniWS(pRacunid, pRacunid, 0, 0, TekociStrm, 0, 0, 0, date - DatumNazajDni), token)
+     */
+    public static RacunTp getRacun(String serverUrl, String token, int racunId, int tocilnicaId, String odDatum) throws Exception {
         String methodName = "getRacuni";
         String soapAction = NAMESPACE + "/" + methodName;
 
         SoapObject request = new SoapObject(NAMESPACE, methodName);
         SoapObject rq = new SoapObject(NAMESPACE, "GetRacuniRqTp");
+        // Exact alphabetical order matching .NET DataContract (STATUS omitted when 0, matching Delphi rqGetRacuniWS)
         rq.addProperty("DO_RACUN_ID", racunId);
+        if (odDatum != null && !odDatum.trim().isEmpty()) {
+            rq.addProperty("OD_DATUM", odDatum.trim());
+        }
         rq.addProperty("OD_RACUN_ID", racunId);
+        if (tocilnicaId > 0) {
+            rq.addProperty("TOCILNICA_ID", tocilnicaId);
+        }
         request.addProperty("rq", rq);
         if (token != null && !token.isEmpty()) {
             request.addProperty("token", token);
@@ -3633,6 +3746,11 @@ public class RosKasaSoapClient {
     private static SoapObject buildSoapPlaciloTp(PlaciloTp pl, int parentRacunId, int defaultPlId, int depth) {
         SoapObject soap = new SoapObject(NAMESPACE, "PlaciloTp");
 
+        // 0. A_VRSTA_STROSKA: Worldline SixTap WPI_SESSION_ID (GUID)
+        if (pl.getWpiSessionId() != null && !pl.getWpiSessionId().trim().isEmpty()) {
+            soap.addProperty("A_VRSTA_STROSKA", pl.getWpiSessionId().trim());
+        }
+
         // 1. DATUM: yyyy-MM-ddT00:00:00Z (lokalni datum naprave)
         SimpleDateFormat sdfDate = new SimpleDateFormat("yyyy-MM-dd'T'00:00:00'Z'", Locale.US);
         soap.addProperty("DATUM", sdfDate.format(new Date()));
@@ -3657,6 +3775,11 @@ public class RosKasaSoapClient {
         // 3. GOST_PRIJAVA_ID
         int prijavaId = pl.getGostPrijavaId() != null ? pl.getGostPrijavaId() : 0;
         soap.addProperty("GOST_PRIJAVA_ID", prijavaId);
+
+        // 3b. HIS_CENIK_AI (skupine v HIS)
+        if (pl.getHisCenikAi() != null && pl.getHisCenikAi() > 0) {
+            soap.addProperty("HIS_CENIK_AI", pl.getHisCenikAi());
+        }
 
         // 4. KUPEC_ID
         int kupecId = pl.getKupecId() != null ? pl.getKupecId() : 0;
@@ -3770,6 +3893,9 @@ public class RosKasaSoapClient {
         if (statusStr != null) {
             try { racun.setStatus(Integer.parseInt(statusStr)); } catch (Exception ignored) {}
         }
+
+        String bkartaStr = getPropertyStringSafe(soap, "BKARTA_ID");
+        if (bkartaStr != null) racun.setBkartaId(bkartaStr.trim());
 
         String markerStr = getPropertyStringSafe(soap, "MARKER");
         if (markerStr != null) racun.setMarker(markerStr);
@@ -4232,6 +4358,11 @@ public class RosKasaSoapClient {
             try { pl.setGostPrijavaId(Integer.parseInt(gostPrijStr)); } catch (Exception ignored) {}
         }
 
+        String hisCenikStr = getPropertyStringSafe(soap, "HIS_CENIK_AI");
+        if (hisCenikStr != null) {
+            try { pl.setHisCenikAi(Integer.parseInt(hisCenikStr)); } catch (Exception ignored) {}
+        }
+
         String kupecStr = getPropertyStringSafe(soap, "KUPEC_ID");
         if (kupecStr != null) {
             try { pl.setKupecId(Integer.parseInt(kupecStr)); } catch (Exception ignored) {}
@@ -4252,8 +4383,13 @@ public class RosKasaSoapClient {
         String mRefStr = getPropertyStringSafe(soap, "M_REF");
         if (mRefStr != null) pl.setMRef(mRefStr.trim());
 
-        String wpiSesStr = getPropertyStringSafe(soap, "WPI_SESSION_ID");
-        if (wpiSesStr != null) pl.setWpiSessionId(wpiSesStr.trim());
+        String aVrstaStroskaStr = getPropertyStringSafe(soap, "A_VRSTA_STROSKA");
+        if (aVrstaStroskaStr != null && !aVrstaStroskaStr.trim().isEmpty()) {
+            pl.setWpiSessionId(aVrstaStroskaStr.trim());
+        } else {
+            String wpiSesStr = getPropertyStringSafe(soap, "WPI_SESSION_ID");
+            if (wpiSesStr != null) pl.setWpiSessionId(wpiSesStr.trim());
+        }
 
         String napitninaStr = getPropertyStringSafe(soap, "NAPITNINA");
         if (napitninaStr != null) {
@@ -4328,5 +4464,379 @@ public class RosKasaSoapClient {
             url = url + "/";
         }
         return url + "kasa.asmx";
+    }
+
+    // ==================== FAZA P3 SOAP METODE ====================
+
+    public static class NapitninaSkupajItem {
+        public int kasiral;
+        public BigDecimal napitnina = BigDecimal.ZERO;
+    }
+
+    public static List<NapitninaSkupajItem> getNapitninaSkupaj(String serverUrl, String token, int status, int tocilnicaId, int osebaId, String odDatum) throws Exception {
+        String methodName = "getNapitninaSkupaj";
+        String soapAction = NAMESPACE + "/" + methodName;
+        SoapObject request = new SoapObject(NAMESPACE, methodName);
+        SoapObject rq = new SoapObject(NAMESPACE, "GetNapitninaSkupajRqTp");
+        rq.addProperty("STATUS", status);
+        rq.addProperty("TOCILNICA_ID", tocilnicaId);
+        rq.addProperty("OSEBA_ID", osebaId);
+        if (odDatum != null && !odDatum.isEmpty()) {
+            rq.addProperty("OD_DATUM", odDatum);
+        }
+        request.addProperty("rq", rq);
+        if (token != null && !token.isEmpty()) request.addProperty("token", token);
+
+        SoapSerializationEnvelope envelope = createEnvelope(request);
+        HttpTransportSE transport = new HttpTransportSE(formatEndpoint(serverUrl), TIMEOUT_MS);
+        List<NapitninaSkupajItem> result = new ArrayList<>();
+        transport.call(soapAction, envelope);
+        checkResponseFault(envelope, methodName);
+
+        if (envelope.bodyIn instanceof SoapObject) {
+            SoapObject response = (SoapObject) envelope.bodyIn;
+            if (response.hasProperty("getNapitninaSkupajResult")) {
+                Object r = response.getProperty("getNapitninaSkupajResult");
+                if (r instanceof SoapObject) response = (SoapObject) r;
+            }
+            Object arrObj = getPropertyObjSafe(response, "Napitnine");
+            if (arrObj instanceof SoapObject) {
+                SoapObject arr = (SoapObject) arrObj;
+                for (int i = 0; i < arr.getPropertyCount(); i++) {
+                    Object o = arr.getProperty(i);
+                    if (o instanceof SoapObject) {
+                        SoapObject s = (SoapObject) o;
+                        NapitninaSkupajItem it = new NapitninaSkupajItem();
+                        String kStr = getPropertyStringSafe(s, "KASIRAL");
+                        if (kStr != null) { try { it.kasiral = Integer.parseInt(kStr.trim()); } catch (Exception ignored) {} }
+                        String nStr = getPropertyStringSafe(s, "NAPITNINA");
+                        if (nStr != null) { try { it.napitnina = new BigDecimal(nStr.replace(",", ".").trim()); } catch (Exception ignored) {} }
+                        result.add(it);
+                    }
+                }
+            }
+        }
+        return result;
+    }
+
+    public static class SkupinaItem {
+        public int cenikAi;
+        public String skupinaNaziv = "";
+        public String storitevNaziv = "";
+        public int steviloGostov;
+        public int rezervacijaId;
+    }
+
+    public static List<SkupinaItem> getListaSkupin(String serverUrl, String token, List<Integer> obrati) throws Exception {
+        String methodName = "getListaSkupin";
+        String soapAction = NAMESPACE + "/" + methodName;
+        SoapObject request = new SoapObject(NAMESPACE, methodName);
+        SoapObject rq = new SoapObject(NAMESPACE, "GetListaSkupinRqTp");
+        if (obrati != null && !obrati.isEmpty()) {
+            SoapObject obratiArr = new SoapObject(NAMESPACE, "OBRATI");
+            for (Integer ob : obrati) {
+                if (ob != null && ob > 0) obratiArr.addProperty("int", ob);
+            }
+            rq.addProperty("OBRATI", obratiArr);
+        }
+        request.addProperty("rq", rq);
+        if (token != null && !token.isEmpty()) request.addProperty("token", token);
+
+        SoapSerializationEnvelope envelope = createEnvelope(request);
+        HttpTransportSE transport = new HttpTransportSE(formatEndpoint(serverUrl), TIMEOUT_MS);
+        List<SkupinaItem> result = new ArrayList<>();
+        transport.call(soapAction, envelope);
+        checkResponseFault(envelope, methodName);
+
+        if (envelope.bodyIn instanceof SoapObject) {
+            SoapObject response = (SoapObject) envelope.bodyIn;
+            if (response.hasProperty("getListaSkupinResult")) {
+                Object r = response.getProperty("getListaSkupinResult");
+                if (r instanceof SoapObject) response = (SoapObject) r;
+            }
+            Object arrObj = getPropertyObjSafe(response, "Skupine");
+            if (arrObj instanceof SoapObject) {
+                SoapObject arr = (SoapObject) arrObj;
+                for (int i = 0; i < arr.getPropertyCount(); i++) {
+                    Object o = arr.getProperty(i);
+                    if (o instanceof SoapObject) {
+                        SoapObject s = (SoapObject) o;
+                        SkupinaItem it = new SkupinaItem();
+                        String aiStr = getPropertyStringSafe(s, "CENIK_AI");
+                        if (aiStr != null) { try { it.cenikAi = Integer.parseInt(aiStr.trim()); } catch (Exception ignored) {} }
+                        String sn = getPropertyStringSafe(s, "SKUPINA_NAZIV");
+                        if (sn != null) it.skupinaNaziv = sn.trim();
+                        String stn = getPropertyStringSafe(s, "STORITEV_NAZIV");
+                        if (stn != null) it.storitevNaziv = stn.trim();
+                        String sg = getPropertyStringSafe(s, "STEVILO_GOSTOV");
+                        if (sg != null) { try { it.steviloGostov = Integer.parseInt(sg.trim()); } catch (Exception ignored) {} }
+                        String rez = getPropertyStringSafe(s, "REZERVACIJA_ID");
+                        if (rez != null) { try { it.rezervacijaId = Integer.parseInt(rez.trim()); } catch (Exception ignored) {} }
+                        result.add(it);
+                    }
+                }
+            }
+        }
+        return result;
+    }
+
+    public static class ObrokItem {
+        public String imeGosta = "";
+        public int kolicinaZ;
+        public int kolicinaK;
+        public int kolicinaV;
+    }
+
+    public static List<ObrokItem> getObroki(String serverUrl, String token, int obratId, int prostorId, String datumIso) throws Exception {
+        String methodName = "getObroki";
+        String soapAction = NAMESPACE + "/" + methodName;
+        SoapObject request = new SoapObject(NAMESPACE, methodName);
+        SoapObject rq = new SoapObject(NAMESPACE, "GetObrokiRqTp");
+        rq.addProperty("OBRAT_ID", obratId);
+        rq.addProperty("PROSTOR_ID", prostorId);
+        if (datumIso != null && !datumIso.isEmpty()) rq.addProperty("DATUM", datumIso);
+        request.addProperty("rq", rq);
+        if (token != null && !token.isEmpty()) request.addProperty("token", token);
+
+        SoapSerializationEnvelope envelope = createEnvelope(request);
+        HttpTransportSE transport = new HttpTransportSE(formatEndpoint(serverUrl), TIMEOUT_MS);
+        List<ObrokItem> result = new ArrayList<>();
+        transport.call(soapAction, envelope);
+        checkResponseFault(envelope, methodName);
+
+        if (envelope.bodyIn instanceof SoapObject) {
+            SoapObject response = (SoapObject) envelope.bodyIn;
+            if (response.hasProperty("getObrokiResult")) {
+                Object r = response.getProperty("getObrokiResult");
+                if (r instanceof SoapObject) response = (SoapObject) r;
+            }
+            Object arrObj = getPropertyObjSafe(response, "Obroki");
+            if (arrObj instanceof SoapObject) {
+                SoapObject arr = (SoapObject) arrObj;
+                for (int i = 0; i < arr.getPropertyCount(); i++) {
+                    Object o = arr.getProperty(i);
+                    if (o instanceof SoapObject) {
+                        SoapObject s = (SoapObject) o;
+                        ObrokItem it = new ObrokItem();
+                        String ime = getPropertyStringSafe(s, "IMEGOSTA");
+                        if (ime != null) it.imeGosta = ime.trim();
+                        String kz = getPropertyStringSafe(s, "KOLICINA_Z");
+                        if (kz != null) { try { it.kolicinaZ = Integer.parseInt(kz.trim()); } catch (Exception ignored) {} }
+                        String kk = getPropertyStringSafe(s, "KOLICINA_K");
+                        if (kk != null) { try { it.kolicinaK = Integer.parseInt(kk.trim()); } catch (Exception ignored) {} }
+                        String kv = getPropertyStringSafe(s, "KOLICINA_V");
+                        if (kv != null) { try { it.kolicinaV = Integer.parseInt(kv.trim()); } catch (Exception ignored) {} }
+                        result.add(it);
+                    }
+                }
+            }
+        }
+        return result;
+    }
+
+    public static class CrmGostItem {
+        public long gostId;
+        public String naziv = "";
+        public String naslov = "";
+    }
+
+    public static List<CrmGostItem> searchGost(String serverUrl, String token, String query) throws Exception {
+        String methodName = "searchGost";
+        String soapAction = NAMESPACE + "/" + methodName;
+        SoapObject request = new SoapObject(NAMESPACE, methodName);
+        request.addProperty("isci", query != null ? query : "");
+        if (token != null && !token.isEmpty()) request.addProperty("token", token);
+
+        SoapSerializationEnvelope envelope = createEnvelope(request);
+        HttpTransportSE transport = new HttpTransportSE(formatEndpoint(serverUrl), TIMEOUT_MS);
+        List<CrmGostItem> result = new ArrayList<>();
+        transport.call(soapAction, envelope);
+        checkResponseFault(envelope, methodName);
+
+        if (envelope.bodyIn instanceof SoapObject) {
+            SoapObject response = (SoapObject) envelope.bodyIn;
+            if (response.hasProperty("searchGostResult")) {
+                Object r = response.getProperty("searchGostResult");
+                if (r instanceof SoapObject) response = (SoapObject) r;
+            }
+            Object arrObj = getPropertyObjSafe(response, "Gosti");
+            if (arrObj instanceof SoapObject) {
+                SoapObject arr = (SoapObject) arrObj;
+                for (int i = 0; i < arr.getPropertyCount(); i++) {
+                    Object o = arr.getProperty(i);
+                    if (o instanceof SoapObject) {
+                        SoapObject s = (SoapObject) o;
+                        CrmGostItem it = new CrmGostItem();
+                        String idStr = getPropertyStringSafe(s, "GOST_ID");
+                        if (idStr != null) { try { it.gostId = Long.parseLong(idStr.trim()); } catch (Exception ignored) {} }
+                        String naz = getPropertyStringSafe(s, "NAZIV");
+                        if (naz != null) it.naziv = naz.trim();
+                        String nas = getPropertyStringSafe(s, "NASLOV");
+                        if (nas != null) it.naslov = nas.trim();
+                        result.add(it);
+                    }
+                }
+            }
+        }
+        return result;
+    }
+
+    public static class CrmInfoResult {
+        public String ime = "";
+        public String priimek = "";
+        public String opis = "";
+        public BigDecimal stanje = BigDecimal.ZERO;
+        public BigDecimal popustProc = BigDecimal.ZERO;
+        public String fault = "";
+    }
+
+    public static CrmInfoResult crmInfo(String serverUrl, String token, Long gostId, String stKartice) throws Exception {
+        String methodName = "crmInfo";
+        String soapAction = NAMESPACE + "/" + methodName;
+        SoapObject request = new SoapObject(NAMESPACE, methodName);
+        SoapObject rq = new SoapObject(NAMESPACE, "CrmInfoRqTp");
+        rq.addProperty("BAREA", 2);
+        if (stKartice != null && !stKartice.trim().isEmpty()) {
+            rq.addProperty("STKARTICE", stKartice.trim());
+        }
+        if (gostId != null && gostId > 0) {
+            rq.addProperty("GOST_ID", gostId);
+        }
+        rq.addProperty("STR_MESTO_ID", 0);
+        request.addProperty("rq", rq);
+        if (token != null && !token.isEmpty()) request.addProperty("token", token);
+
+        SoapSerializationEnvelope envelope = createEnvelope(request);
+        HttpTransportSE transport = new HttpTransportSE(formatEndpoint(serverUrl), TIMEOUT_MS);
+        CrmInfoResult res = new CrmInfoResult();
+        transport.call(soapAction, envelope);
+
+        if (envelope.bodyIn instanceof SoapObject) {
+            SoapObject response = (SoapObject) envelope.bodyIn;
+            if (response.hasProperty("crmInfoResult")) {
+                Object r = response.getProperty("crmInfoResult");
+                if (r instanceof SoapObject) response = (SoapObject) r;
+            }
+            String f = getPropertyStringSafe(response, "fault");
+            if (f != null) res.fault = f.trim();
+            String ime = getPropertyStringSafe(response, "IME");
+            if (ime != null) res.ime = ime.trim();
+            String pri = getPropertyStringSafe(response, "PRIIMEK");
+            if (pri != null) res.priimek = pri.trim();
+            String opis = getPropertyStringSafe(response, "OPIS");
+            if (opis != null) res.opis = opis.trim();
+            String st = getPropertyStringSafe(response, "STANJE");
+            if (st != null) { try { res.stanje = new BigDecimal(st.replace(",", ".").trim()); } catch (Exception ignored) {} }
+            String pp = getPropertyStringSafe(response, "POPUST_PROC");
+            if (pp != null) { try { res.popustProc = new BigDecimal(pp.replace(",", ".").trim()); } catch (Exception ignored) {} }
+        }
+        return res;
+    }
+
+    public static void gdprLog(String serverUrl, String token, String entiteta, long id, String aplikacija, String opis) {
+        try {
+            String methodName = "gdprLog";
+            String soapAction = NAMESPACE + "/" + methodName;
+            SoapObject request = new SoapObject(NAMESPACE, methodName);
+            request.addProperty("entiteta", entiteta);
+            SoapObject ids = new SoapObject(NAMESPACE, "ids");
+            ids.addProperty("long", id);
+            request.addProperty("ids", ids);
+            request.addProperty("aplikacija", aplikacija);
+            request.addProperty("opis", opis);
+            if (token != null && !token.isEmpty()) request.addProperty("token", token);
+
+            SoapSerializationEnvelope envelope = createEnvelope(request);
+            HttpTransportSE transport = new HttpTransportSE(formatEndpoint(serverUrl), TIMEOUT_MS);
+            transport.call(soapAction, envelope);
+        } catch (Exception e) {
+            Log.w(TAG, "gdprLog opozorilo: " + e.getMessage());
+        }
+    }
+
+    public static BigDecimal crmGetStTock(String serverUrl, String token, int racunId) throws Exception {
+        String methodName = "crmGetStTock";
+        String soapAction = NAMESPACE + "/" + methodName;
+        SoapObject request = new SoapObject(NAMESPACE, methodName);
+        request.addProperty("racunId", racunId);
+        if (token != null && !token.isEmpty()) request.addProperty("token", token);
+
+        SoapSerializationEnvelope envelope = createEnvelope(request);
+        HttpTransportSE transport = new HttpTransportSE(formatEndpoint(serverUrl), TIMEOUT_MS);
+        transport.call(soapAction, envelope);
+
+        if (envelope.bodyIn instanceof SoapObject) {
+            SoapObject response = (SoapObject) envelope.bodyIn;
+            if (response.hasProperty("crmGetStTockResult")) {
+                Object r = response.getProperty("crmGetStTockResult");
+                if (r instanceof SoapObject) response = (SoapObject) r;
+            }
+            String kap = getPropertyStringSafe(response, "KAPLJICE");
+            if (kap != null && !kap.trim().isEmpty()) {
+                try { return new BigDecimal(kap.replace(",", ".").trim()); } catch (Exception ignored) {}
+            }
+        }
+        return BigDecimal.ZERO;
+    }
+
+    public static String crmTocke(String serverUrl, String token, int racunId) throws Exception {
+        String methodName = "crmTocke";
+        String soapAction = NAMESPACE + "/" + methodName;
+        SoapObject request = new SoapObject(NAMESPACE, methodName);
+        request.addProperty("racunId", racunId);
+        if (token != null && !token.isEmpty()) request.addProperty("token", token);
+
+        SoapSerializationEnvelope envelope = createEnvelope(request);
+        HttpTransportSE transport = new HttpTransportSE(formatEndpoint(serverUrl), TIMEOUT_MS);
+        transport.call(soapAction, envelope);
+
+        if (envelope.bodyIn instanceof SoapObject) {
+            SoapObject response = (SoapObject) envelope.bodyIn;
+            if (response.hasProperty("crmTockeResult")) {
+                Object r = response.getProperty("crmTockeResult");
+                if (r instanceof SoapObject) response = (SoapObject) r;
+            }
+            String f = getPropertyStringSafe(response, "fault");
+            return f != null ? f.trim() : "";
+        }
+        return "";
+    }
+
+    public static List<String> getReceptura(String serverUrl, String token, int nivo4Id) throws Exception {
+        String methodName = "getReceptura";
+        String soapAction = NAMESPACE + "/" + methodName;
+        SoapObject request = new SoapObject(NAMESPACE, methodName);
+        request.addProperty("nivo4Id", nivo4Id);
+        if (token != null && !token.isEmpty()) request.addProperty("token", token);
+
+        SoapSerializationEnvelope envelope = createEnvelope(request);
+        HttpTransportSE transport = new HttpTransportSE(formatEndpoint(serverUrl), TIMEOUT_MS);
+        List<String> result = new ArrayList<>();
+        transport.call(soapAction, envelope);
+        checkResponseFault(envelope, methodName);
+
+        if (envelope.bodyIn instanceof SoapObject) {
+            SoapObject response = (SoapObject) envelope.bodyIn;
+            if (response.hasProperty("getRecepturaResult")) {
+                Object r = response.getProperty("getRecepturaResult");
+                if (r instanceof SoapObject) response = (SoapObject) r;
+            }
+            Object arrObj = getPropertyObjSafe(response, "Receptura");
+            if (arrObj instanceof SoapObject) {
+                SoapObject arr = (SoapObject) arrObj;
+                for (int i = 0; i < arr.getPropertyCount(); i++) {
+                    Object o = arr.getProperty(i);
+                    if (o instanceof SoapObject) {
+                        SoapObject s = (SoapObject) o;
+                        String naz = getPropertyStringSafe(s, "NAZIV_ZA_RAC");
+                        String kol = getPropertyStringSafe(s, "KOLICINA");
+                        if (naz != null && !naz.trim().isEmpty()) {
+                            result.add(naz.trim() + (kol != null && !kol.trim().isEmpty() ? " — " + kol.trim() : ""));
+                        }
+                    }
+                }
+            }
+        }
+        return result;
     }
 }

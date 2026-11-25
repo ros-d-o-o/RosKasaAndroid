@@ -43,6 +43,7 @@ public class Globals {
     private final List<HitraTipkaTp> cachedHitreTipke = new ArrayList<>();
     private final List<CenikVrVrTp> cachedCenikVrVr = new ArrayList<>();
     private final List<DodatekTp> cachedDodatki = new ArrayList<>();
+    private final java.util.Map<String, BigDecimal> cachedCenikVrCene = new java.util.HashMap<>();
     private final List<StornoRazlogTp> cachedStornoRazlogi = new ArrayList<>();
     private final List<LojalnostnaTp> cachedLojalnostna = new ArrayList<>();
     private final Map<Integer, String> nivo4NazivLookup = new java.util.concurrent.ConcurrentHashMap<>();
@@ -96,6 +97,7 @@ public class Globals {
     // NFC Settings
     private boolean pNfc = false;
     private boolean pnfcprijava = false;
+    private boolean androidNfcIzklop = false;
 
     // General Setup Parameters
     private Integer fiskalizacija;
@@ -130,7 +132,7 @@ public class Globals {
     private String nazivZahvala3 = "";
     private String nazivZahvala4 = "";
     private int hisDestinacija = 0;
-    private int hisObrat = 512200;
+    private int hisObrat = 0;
 
     // Printer Settings & ESC Codes
     private int printerSteviloZnakov = 42;
@@ -163,6 +165,7 @@ public class Globals {
     private int davkiFiskalMetoda = 0;
     private boolean rajoni = false;
     private int rajonDefault = 0;
+    private int selectedRajon = -1; // -1 = še ni izbran v tej seji (uporabi rajonDefault)
     private boolean printAlignLeft = false;
     private boolean placilaEnabled = true;
     private int zamudaMinute = 0;
@@ -302,6 +305,7 @@ public class Globals {
     private String cenaPolnjenje = "";
     private String hisObrati = "";
     private int izpisaniVidniDo = 0;
+    private int maxDniNazaj = 365;
     private int narociloStornoDo = 0;
     private String placilaPodpis = "";
     private List<Integer> placilaPodpisId = new ArrayList<>();
@@ -501,6 +505,45 @@ public class Globals {
     }
 
     /**
+     * Ponovno pošiljanje lokalno shranjene offline kronologije (kronologija.log) na strežnik ob prijavi/izhodu.
+     */
+    public void posljiOfflineKronologijo() {
+        if (this.kronologIzklop || !this.logirajAktivnost) return;
+        if (this.appContext == null || !isNetworkAvailable(this.appContext)) return;
+        if (this.serverUrl == null || this.serverUrl.isEmpty() || this.token == null || this.token.isEmpty()) return;
+
+        final File logFile = new File(this.appContext.getFilesDir(), "kronologija.log");
+        if (!logFile.exists() || logFile.length() == 0) return;
+
+        final String sUrl = this.serverUrl;
+        final String tok = this.token;
+        final String mob = String.valueOf(this.mobileId);
+        final int osId = this.tekocaOsebaId != 0 ? this.tekocaOsebaId : 9999;
+        final int obId = this.tocilnicaId != 0 ? this.tocilnicaId : (this.hisObrat != 0 ? this.hisObrat : 512200);
+
+        new Thread(() -> {
+            List<String> lines = new ArrayList<>();
+            synchronized (Globals.this) {
+                if (!logFile.exists()) return;
+                try (java.io.BufferedReader br = new java.io.BufferedReader(new java.io.FileReader(logFile))) {
+                    String line;
+                    while ((line = br.readLine()) != null) {
+                        if (!line.trim().isEmpty()) {
+                            lines.add(line.trim());
+                        }
+                    }
+                    logFile.delete();
+                } catch (Exception ignored) {}
+            }
+            // Pošlji največ zadnjih 50 zapisov, da ne preobremenimo strežnika
+            int start = Math.max(0, lines.size() - 50);
+            for (int i = start; i < lines.size(); i++) {
+                si.ros.RosKasa.soap.RosKasaSoapClient.vpisKronologijeAsyncDirect(sUrl, tok, mob, lines.get(i), osId, obId);
+            }
+        }).start();
+    }
+
+    /**
      * Vpisi operacijo ali napako v kronologijo
      */
     public void vpisiKronologijo(String serverUrl, String token, String mobileId, String opisOperacije, Integer osebaId, Integer obratId) {
@@ -667,8 +710,8 @@ public class Globals {
         if (setup.getNazivZahvala3() != null) this.nazivZahvala3 = setup.getNazivZahvala3();
         if (setup.getNazivZahvala4() != null) this.nazivZahvala4 = setup.getNazivZahvala4();
 
-        if (setup.getHisDestinacija() != 0) this.hisDestinacija = setup.getHisDestinacija();
-        if (setup.getHisObrat() != 0) this.hisObrat = setup.getHisObrat();
+        this.hisDestinacija = setup.getHisDestinacija();
+        this.hisObrat = setup.getHisObrat();
         if (setup.getKuhinjaId() != null) this.kuhinjaId = setup.getKuhinjaId();
 
         // Printer ESC Codes
@@ -829,6 +872,7 @@ public class Globals {
         if (kvPairs.containsKey("CHECKPINPOTEKEL")) this.pCheckPinPotekel = "D".equalsIgnoreCase(kvPairs.get("CHECKPINPOTEKEL"));
         if (kvPairs.containsKey("NISTORNONAROCILA")) this.niStornoIzpisanegaNarocila = "D".equalsIgnoreCase(kvPairs.get("NISTORNONAROCILA"));
         if (kvPairs.containsKey("OVERRIDESTORNOPOSLAN")) this.overrideStornoPoslanoNarocilo = "D".equalsIgnoreCase(kvPairs.get("OVERRIDESTORNOPOSLAN"));
+        if (kvPairs.containsKey("OVERRIDESTORNOPOSLANONAROCILO")) this.overrideStornoPoslanoNarocilo = "D".equalsIgnoreCase(kvPairs.get("OVERRIDESTORNOPOSLANONAROCILO"));
         if (kvPairs.containsKey("STORNORAZLOGVR")) this.stornoRazlogVr = "D".equalsIgnoreCase(kvPairs.get("STORNORAZLOGVR"));
         if (kvPairs.containsKey("STORNOOSEBASTORNIRAL")) this.stornoOsebaStorniral = "D".equalsIgnoreCase(kvPairs.get("STORNOOSEBASTORNIRAL"));
         if (kvPairs.containsKey("STORNOPOSVIRTUAL")) this.stornoPosVirtual = "D".equalsIgnoreCase(kvPairs.get("STORNOPOSVIRTUAL"));
@@ -922,6 +966,7 @@ public class Globals {
         if (kvPairs.containsKey("CENAPOLNJENJE")) this.cenaPolnjenje = kvPairs.get("CENAPOLNJENJE");
         if (kvPairs.containsKey("HISOBRATI")) this.hisObrati = kvPairs.get("HISOBRATI");
         if (kvPairs.containsKey("IZPISANIVIDNIDO")) { try { this.izpisaniVidniDo = Integer.parseInt(kvPairs.get("IZPISANIVIDNIDO")); } catch (Exception ignored) {} }
+        if (kvPairs.containsKey("MAXDNINAZAJ")) { try { int v = Integer.parseInt(kvPairs.get("MAXDNINAZAJ")); if (v > 0) this.maxDniNazaj = v; } catch (Exception ignored) {} }
         if (kvPairs.containsKey("NAROCILOSTORNODO")) { try { this.narociloStornoDo = Integer.parseInt(kvPairs.get("NAROCILOSTORNODO")); } catch (Exception ignored) {} }
         if (kvPairs.containsKey("PLACILAPODPIS")) {
             this.placilaPodpis = kvPairs.get("PLACILAPODPIS");
@@ -1018,8 +1063,11 @@ public class Globals {
         if (kvPairs.containsKey("TIMEOUTRECEIVE")) { try { this.timeOutReceive = Integer.parseInt(kvPairs.get("TIMEOUTRECEIVE")); } catch (Exception ignored) {} }
         if (kvPairs.containsKey("ANDROIDNETTCPPORT")) { try { this.androidNetTcpPort = Integer.parseInt(kvPairs.get("ANDROIDNETTCPPORT")); } catch (Exception ignored) {} }
         if (kvPairs.containsKey("ANDROIDNFCIZKLOP")) {
-            this.pnfcprijava = "D".equalsIgnoreCase(kvPairs.get("ANDROIDNFCIZKLOP"));
-            this.pNfc = this.pnfcprijava;
+            this.androidNfcIzklop = "D".equalsIgnoreCase(kvPairs.get("ANDROIDNFCIZKLOP"));
+            if (this.androidNfcIzklop) {
+                this.pnfcprijava = false;
+                this.pNfc = false;
+            }
         }
         if (kvPairs.containsKey("HTFONTANDROID")) { try { this.htFontAndroid = Integer.parseInt(kvPairs.get("HTFONTANDROID")); } catch (Exception ignored) {} }
         if (kvPairs.containsKey("TISKANJEPAVZA")) {
@@ -1045,6 +1093,11 @@ public class Globals {
                 this.icePos = false;
                 this.sixPay = false;
                 this.payTenA = false;
+                // Skladno z Delphi: če je SIXTAP='D' in privzeta WPI verzija 2.2, vklopimo recovery/last-transaction preverjanje
+                // (razen če ga RECOVERTAPON='N' spodaj izrecno izklopi)
+                if (this.sixTapWpiVersion != null && this.sixTapWpiVersion.contains("2.")) {
+                    this.recoverTapOn = true;
+                }
             }
         }
         if (kvPairs.containsKey("SIXTAP_STATUS")) this.sixTapStatus = "D".equalsIgnoreCase(kvPairs.get("SIXTAP_STATUS"));
@@ -1174,6 +1227,31 @@ public class Globals {
 
     public boolean isPnfcprijava() { return pnfcprijava; }
     public void setPnfcprijava(boolean pnfcprijava) { this.pnfcprijava = pnfcprijava; }
+    public boolean isAndroidNfcIzklop() { return androidNfcIzklop; }
+
+    /**
+     * Preverjanje omrežne povezave (skladno z Delphi CheckPovezava).
+     */
+    public static boolean isNetworkAvailable(Context context) {
+        if (context == null) return true;
+        try {
+            android.net.ConnectivityManager cm = (android.net.ConnectivityManager) context.getSystemService(Context.CONNECTIVITY_SERVICE);
+            if (cm == null) return true;
+            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.M) {
+                android.net.Network activeNet = cm.getActiveNetwork();
+                if (activeNet == null) return false;
+                android.net.NetworkCapabilities caps = cm.getNetworkCapabilities(activeNet);
+                return caps != null && (caps.hasTransport(android.net.NetworkCapabilities.TRANSPORT_WIFI)
+                        || caps.hasTransport(android.net.NetworkCapabilities.TRANSPORT_CELLULAR)
+                        || caps.hasTransport(android.net.NetworkCapabilities.TRANSPORT_ETHERNET));
+            } else {
+                android.net.NetworkInfo info = cm.getActiveNetworkInfo();
+                return info != null && info.isConnected();
+            }
+        } catch (Exception e) {
+            return true;
+        }
+    }
 
     public Integer getFiskalizacija() { return fiskalizacija; }
     public void setFiskalizacija(Integer fiskalizacija) { this.fiskalizacija = fiskalizacija; }
@@ -1330,6 +1408,8 @@ public class Globals {
     public int getDavkiFiskalMetoda() { return davkiFiskalMetoda; }
     public boolean isRajoni() { return rajoni; }
     public int getRajonDefault() { return rajonDefault; }
+    public int getSelectedRajon() { return selectedRajon; }
+    public void setSelectedRajon(int selectedRajon) { this.selectedRajon = selectedRajon; }
     public boolean isPrintAlignLeft() { return printAlignLeft; }
     public boolean isPlacilaEnabled() { return placilaEnabled; }
     public int getZamudaMinute() { return zamudaMinute; }
@@ -1781,6 +1861,7 @@ public class Globals {
     public String getCenaPolnjenje() { return cenaPolnjenje; }
     public String getHisObrati() { return hisObrati; }
     public int getIzpisaniVidniDo() { return izpisaniVidniDo; }
+    public int getMaxDniNazaj() { return maxDniNazaj > 0 ? maxDniNazaj : 365; }
     public int getNarociloStornoDo() { return narociloStornoDo; }
     public String getPlacilaPodpis() { return placilaPodpis; }
     public List<Integer> getPlacilaPodpisId() { return placilaPodpisId; }
@@ -2036,41 +2117,132 @@ public class Globals {
         return !cachedDodatki.isEmpty();
     }
 
+    public String findDodatekTextById(int dodatekId) {
+        if (dodatekId <= 0) return "";
+        for (DodatekTp d : cachedDodatki) {
+            if (d != null && d.getDodatekId() == dodatekId && d.getDodatekText() != null) {
+                return d.getDodatekText().trim();
+            }
+        }
+        return "";
+    }
+
+    // Cache za CENIKVRCENE (DNCENIK)
+    public synchronized void setCachedCenikVrCene(java.util.Map<String, BigDecimal> map) {
+        cachedCenikVrCene.clear();
+        if (map != null) {
+            cachedCenikVrCene.putAll(map);
+        }
+    }
+
+    public synchronized BigDecimal findDnCena(String dnId, int nivo4Id) {
+        if (!dnCenik || dnId == null || dnId.trim().isEmpty() || "0".equals(dnId.trim()) || nivo4Id <= 0) {
+            return null;
+        }
+        return cachedCenikVrCene.get(dnId.trim() + "_" + nivo4Id);
+    }
+
+    /**
+     * Formula CenaPolnjenje (skladno z Delphi):
+     * Ko je ep != 1 in polnjenje != 0:
+     * - CenaPolnjenje = 'D' -> osnovnaCena / polnjenje
+     * - CenaPolnjenje != 'D' -> deli s polnjenje samo, če (ep != polnjenje) && (em == 1)
+     */
+    public BigDecimal izracunajCenoPolnjenje(BigDecimal osnovnaCena, double ep, double polnjenje, int em) {
+        if (osnovnaCena == null) return BigDecimal.ZERO;
+        if (Math.abs(ep - 1.0) > 1e-6 && polnjenje > 0) {
+            if ("D".equalsIgnoreCase(cenaPolnjenje)) {
+                return osnovnaCena.divide(BigDecimal.valueOf(polnjenje), 4, java.math.RoundingMode.HALF_UP);
+            } else if (Math.abs(ep - polnjenje) > 1e-6 && em == 1) {
+                return osnovnaCena.divide(BigDecimal.valueOf(polnjenje), 4, java.math.RoundingMode.HALF_UP);
+            }
+        }
+        return osnovnaCena;
+    }
+
+    /**
+     * Določi _NeNarocaj po pravilih iz Delphi:
+     * _NeNarocaj = true samo če velja (PrintamNarocila && !PrintBlokInNarocilo) ali PrintamNarocilaNikamor
+     * ali je izklopljen kanal NePrintamNarT1..4 glede na tblCenik.IZPIS_NAROCILA.
+     */
+    public boolean izracunajNeNarocaj(int izpisNarocila) {
+        if (printamNarocilaNikamor) return true;
+        if (printamNarocila && !printBlokInNarocilo) return true;
+        if (izpisNarocila == 1 && nePrintamNarT1) return true;
+        if (izpisNarocila == 2 && nePrintamNarT2) return true;
+        if (izpisNarocila == 3 && nePrintamNarT3) return true;
+        if (izpisNarocila == 4 && nePrintamNarT4) return true;
+        return false;
+    }
+
     /**
      * Razporedi popust 99 na vse aktivne postavke racuna po formuli iz Delphi PopustNaRacun.
+     * Podpira % popust, proporcionalni € popust (Popust99Proporcialno) in neto izračun davka.
      */
     public BigDecimal popustNaRacun(RacunTp racun, BigDecimal procent, BigDecimal znesek) {
         if (racun == null || racun.getRacPozic() == null) return BigDecimal.ZERO;
         BigDecimal skupniPopust = BigDecimal.ZERO;
 
+        List<PozicijaTp> aktivne = new ArrayList<>();
+        BigDecimal skupajBruto = BigDecimal.ZERO;
         for (PozicijaTp p : racun.getRacPozic()) {
             if (p != null && !p.isRowDeleted()) {
+                aktivne.add(p);
                 BigDecimal pKol = BigDecimal.valueOf(p.getKolicina());
                 BigDecimal pEp = (p.getEnotaProdajeId() != null && p.getEnotaProdajeId().compareTo(BigDecimal.ZERO) > 0) ? p.getEnotaProdajeId() : BigDecimal.ONE;
-                BigDecimal polnaVrednost = p.getCena().multiply(pKol).multiply(pEp).setScale(2, java.math.RoundingMode.HALF_UP);
-
-                BigDecimal vrsticaPopust = BigDecimal.ZERO;
-                if (procent != null && procent.compareTo(BigDecimal.ZERO) > 0) {
-                    vrsticaPopust = polnaVrednost.multiply(procent).divide(BigDecimal.valueOf(100), 2, java.math.RoundingMode.HALF_UP);
-                    p.setCenaNabavna(p.getCenaNabavna() != null ? p.getCenaNabavna().add(procent) : procent);
-                } else if (znesek != null && znesek.compareTo(BigDecimal.ZERO) > 0) {
-                    vrsticaPopust = znesek;
-                }
-
-                p.setZnesekPopust(vrsticaPopust);
-                // 100% KONTROLA: Za Popust 99 se ZNESEK in CENA na RACPOZIC NE spremenita!
-                // ZNESEK ostane polnaVrednost (kolicina * ep * cena), popust pa je zabelezen v ZNESEK_POPUST in CENA_NABAVNA.
-                // Glava racuna (RACGLAVA.ZNESEK) je VEDNO suma narocila in se NIKOLI ne spreminja pri popustu 99!
-                p.setZnesek(polnaVrednost);
-
-                if (p.getStopnjaDavka() > 0 && polnaVrednost.compareTo(BigDecimal.ZERO) > 0) {
-                    double davekProc = p.getStopnjaDavka();
-                    BigDecimal zd = polnaVrednost.multiply(BigDecimal.valueOf(davekProc)).divide(BigDecimal.valueOf(100.0 + davekProc), 4, java.math.RoundingMode.HALF_UP);
-                    p.setZnesekDavka(zd);
-                }
-
-                skupniPopust = skupniPopust.add(vrsticaPopust);
+                BigDecimal polna = p.getCena().multiply(pKol).multiply(pEp).setScale(2, java.math.RoundingMode.HALF_UP);
+                skupajBruto = skupajBruto.add(polna);
             }
+        }
+        if (aktivne.isEmpty()) return BigDecimal.ZERO;
+
+        BigDecimal preostaliZnesekPopusta = (znesek != null && znesek.compareTo(BigDecimal.ZERO) > 0) ? znesek : BigDecimal.ZERO;
+
+        for (int i = 0; i < aktivne.size(); i++) {
+            PozicijaTp p = aktivne.get(i);
+            BigDecimal pKol = BigDecimal.valueOf(p.getKolicina());
+            BigDecimal pEp = (p.getEnotaProdajeId() != null && p.getEnotaProdajeId().compareTo(BigDecimal.ZERO) > 0) ? p.getEnotaProdajeId() : BigDecimal.ONE;
+            BigDecimal polnaVrednost = p.getCena().multiply(pKol).multiply(pEp).setScale(2, java.math.RoundingMode.HALF_UP);
+
+            BigDecimal vrsticaPopust = BigDecimal.ZERO;
+            if (procent != null && procent.compareTo(BigDecimal.ZERO) > 0) {
+                vrsticaPopust = polnaVrednost.multiply(procent).divide(BigDecimal.valueOf(100), 2, java.math.RoundingMode.HALF_UP);
+                p.setCenaNabavna(p.getCenaNabavna() != null ? p.getCenaNabavna().add(procent) : procent);
+            } else if (znesek != null && znesek.compareTo(BigDecimal.ZERO) > 0) {
+                if (i == aktivne.size() - 1) {
+                    vrsticaPopust = preostaliZnesekPopusta;
+                } else if (skupajBruto.compareTo(BigDecimal.ZERO) > 0) {
+                    vrsticaPopust = znesek.multiply(polnaVrednost).divide(skupajBruto, 2, java.math.RoundingMode.HALF_UP);
+                    if (vrsticaPopust.compareTo(preostaliZnesekPopusta) > 0) {
+                        vrsticaPopust = preostaliZnesekPopusta;
+                    }
+                }
+                if (vrsticaPopust.compareTo(polnaVrednost) > 0) {
+                    vrsticaPopust = polnaVrednost;
+                }
+                preostaliZnesekPopusta = preostaliZnesekPopusta.subtract(vrsticaPopust);
+                if (polnaVrednost.compareTo(BigDecimal.ZERO) > 0 && vrsticaPopust.compareTo(BigDecimal.ZERO) > 0) {
+                    BigDecimal eqProc = vrsticaPopust.multiply(BigDecimal.valueOf(100)).divide(polnaVrednost, 2, java.math.RoundingMode.HALF_UP);
+                    p.setCenaNabavna(eqProc);
+                }
+            }
+
+            p.setZnesekPopust(vrsticaPopust);
+            // ZNESEK ostane polnaVrednost (kolicina * ep * cena), popust pa je zabelezen v ZNESEK_POPUST in CENA_NABAVNA.
+            p.setZnesek(polnaVrednost);
+
+            // Neto izračun davka (od bruto - popust - lojalnost)
+            BigDecimal loj = p.getZnesekLojalnost() != null ? p.getZnesekLojalnost().abs() : BigDecimal.ZERO;
+            BigDecimal neto = polnaVrednost.subtract(vrsticaPopust).subtract(loj);
+            if (p.getStopnjaDavka() > 0 && neto.compareTo(BigDecimal.ZERO) > 0) {
+                double davekProc = p.getStopnjaDavka();
+                BigDecimal zd = neto.multiply(BigDecimal.valueOf(davekProc)).divide(BigDecimal.valueOf(100.0 + davekProc), 4, java.math.RoundingMode.HALF_UP);
+                p.setZnesekDavka(zd);
+            } else if (neto.compareTo(BigDecimal.ZERO) <= 0) {
+                p.setZnesekDavka(BigDecimal.ZERO);
+            }
+
+            skupniPopust = skupniPopust.add(vrsticaPopust);
         }
 
         racun.posodobiZnesekIzNarocila();
@@ -2248,7 +2420,7 @@ public class Globals {
         String n2 = java.text.Normalizer.normalize(s2, java.text.Normalizer.Form.NFD)
                 .replaceAll("\\p{M}", "")
                 .toLowerCase(java.util.Locale.ROOT);
-        return n1.equalsIgnoreCase(n2) || n1.contains(n2) || n2.contains(n1);
+        return n1.equalsIgnoreCase(n2);
     }
 
     public synchronized boolean osebiDovoljeno(int osebaId, String pravicaCaption) {
@@ -2295,6 +2467,17 @@ public class Globals {
 
     public synchronized boolean isDovoljeno(String pravicaCaption) {
         return osebiDovoljeno(this.tekocaOsebaId, pravicaCaption);
+    }
+
+    /**
+     * Delphi FormKasaMobile.pas:4530-4537:
+     * Storno že poslanega naročila je dovoljen, če ima oseba pravico SStorniraPoslanoNarocilo
+     * (ali je vklopljen OVERRIDESTORNOPOSLANONAROCILO) in ni blokiran z NISTORNONAROCILA.
+     */
+    public synchronized boolean isStornoPoslanegaNarocilaDovoljen() {
+        if (overrideStornoPoslanoNarocilo) return true;
+        if (niStornoIzpisanegaNarocila) return false;
+        return isDovoljeno(si.ros.RosKasa.models.PraviceConsts.SStorniraPoslanoNarocilo);
     }
 
     public synchronized boolean hasCachedStornoRazlogi() {
