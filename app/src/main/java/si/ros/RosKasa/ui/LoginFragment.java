@@ -133,9 +133,14 @@ public class LoginFragment extends Fragment {
             if (isHid) {
                 binding.layoutPinLogin.setVisibility(View.GONE);
                 binding.tvNfcHint.setVisibility(View.VISIBLE);
+                binding.etPinCode.clearFocus();
+                android.view.inputmethod.InputMethodManager imm = (android.view.inputmethod.InputMethodManager) requireContext().getSystemService(android.content.Context.INPUT_METHOD_SERVICE);
+                if (imm != null) {
+                    imm.hideSoftInputFromWindow(binding.etPinCode.getWindowToken(), 0);
+                }
             } else {
                 binding.layoutPinLogin.setVisibility(View.VISIBLE);
-                binding.tvNfcHint.setVisibility(View.VISIBLE);
+                binding.tvNfcHint.setVisibility(Globals.getInstance().isAndroidNfcIzklop() ? View.GONE : View.VISIBLE);
                 binding.etPinCode.post(() -> {
                     if (binding != null) binding.etPinCode.requestFocus();
                 });
@@ -268,8 +273,8 @@ public class LoginFragment extends Fragment {
     private void handleNfcLogin(NfcHelper.NfcCardInfo cardInfo) {
         if (cardInfo == null) return;
         Globals g = Globals.getInstance();
-        if (g.isAndroidNfcIzklop() || (!g.isPnfcprijava() && !g.ispHidPrijava())) {
-            Log.d("LoginFragment", "NFC prijava je izklopljena (ANDROIDNFCIZKLOP / NFCPRIJAVA).");
+        if (g.isAndroidNfcIzklop()) {
+            Log.d("LoginFragment", "NFC prijava je izklopljena (ANDROIDNFCIZKLOP=D).");
             return;
         }
         Log.d("LoginFragment", "NFC kartica zaznana: " + cardInfo);
@@ -299,6 +304,9 @@ public class LoginFragment extends Fragment {
     }
 
     private void handlePinLogin() {
+        if (Globals.getInstance().ispHidPrijava()) {
+            return;
+        }
         String pin = binding.etPinCode.getText().toString().trim();
         if (pin.isEmpty() || "0".equals(pin)) {
             binding.etPinCode.setText("");
@@ -355,7 +363,8 @@ public class LoginFragment extends Fragment {
                     int mId = 1;
                     try { mId = Integer.parseInt(prefs.getMobileId()); } catch (Exception ignored) {}
 
-                    if (Globals.isNetworkAvailable(appCtx)) {
+                    boolean hasConfigAlready = g.getCasGetAppConfig() != null && !g.getCasGetAppConfig().isEmpty();
+                    if (!hasConfigAlready && Globals.isNetworkAvailable(appCtx)) {
                         MobileSetupTp setup = RosKasaSoapClient.getAppConfig(prefs.getServerUrl(), prefs.getToken(), mId);
                         prefs.saveMobileSetup(setup);
                     }
@@ -398,7 +407,9 @@ public class LoginFragment extends Fragment {
                         }
 
                         // 2. Cenik (+ CenikVrVr + CenikVrCene)
-                        int strmId = prefs.getHisObrat() > 0 ? prefs.getHisObrat() : 512200;
+                        int strmId = (g.getTocilnicaId() != null && g.getTocilnicaId() > 0)
+                                ? g.getTocilnicaId()
+                                : (prefs.getTocilnicaId() > 0 ? prefs.getTocilnicaId() : prefs.getHisObrat());
                         try {
                             List<CenikListAdapter.CenikItem> cenik = RosKasaSoapClient.getCenik(prefs.getServerUrl(), prefs.getToken(), strmId);
                             if (cenik != null && !cenik.isEmpty()) {

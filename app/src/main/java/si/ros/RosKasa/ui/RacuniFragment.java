@@ -159,6 +159,7 @@ public class RacuniFragment extends Fragment implements RacunSeznamAdapter.OnIte
             }
         });
 
+        binding.btnOdjava.setVisibility(Globals.getInstance().ispLogout() ? View.VISIBLE : View.INVISIBLE);
         binding.btnOdjava.setOnClickListener(v -> {
             Globals.getInstance().setTekocaOseba(null);
             if (getActivity() instanceof MainActivity) {
@@ -383,8 +384,11 @@ public class RacuniFragment extends Fragment implements RacunSeznamAdapter.OnIte
         executor.execute(() -> {
             try {
                 Globals g = Globals.getInstance();
+                // Ločitev privilegijev (enako kot Delphi FormKasaMobile.pas:1120-1137):
+                // - "Vidi vse račune": vidi vse STATUS=1 IN vse STATUS=2/4
+                // - "Vidi Vsa Narocila": vidi vse STATUS=1 IN samo SVOJE STATUS=2/4
                 boolean vidiVse = (currentStatusFilter == 1)
-                        ? (g.isDovoljeno(PraviceConsts.SVidiVsaNarocila) || g.isOdpriVseRacune())
+                        ? (g.isDovoljeno(PraviceConsts.SVidiVseRacune) || g.isDovoljeno(PraviceConsts.SVidiVsaNarocila) || g.isOdpriVseRacune())
                         : (g.isDovoljeno(PraviceConsts.SVidiVseRacune) || g.isOdpriVseRacune());
                 int pOseba = vidiVse ? 0 : g.getTekocaOsebaId();
                 int strmId = (g.getTocilnicaId() != null && g.getTocilnicaId() > 0)
@@ -524,7 +528,9 @@ public class RacuniFragment extends Fragment implements RacunSeznamAdapter.OnIte
 
                     // Zagotovi, da je cenik naložen v predpomnilnik za lookup nazivov
                     if (!Globals.getInstance().hasCachedCenik()) {
-                        int strmId = prefs.getHisObrat() > 0 ? prefs.getHisObrat() : 512200;
+                        int strmId = (Globals.getInstance().getTocilnicaId() != null && Globals.getInstance().getTocilnicaId() > 0)
+                                ? Globals.getInstance().getTocilnicaId()
+                                : (prefs.getTocilnicaId() > 0 ? prefs.getTocilnicaId() : prefs.getHisObrat());
                         try {
                             List<CenikListAdapter.CenikItem> cenik = RosKasaSoapClient.getCenik(prefs.getServerUrl(), prefs.getToken(), strmId);
                             if (!cenik.isEmpty()) {
@@ -958,7 +964,7 @@ public class RacuniFragment extends Fragment implements RacunSeznamAdapter.OnIte
         }
 
         binding.pbLoading.setVisibility(View.VISIBLE);
-        Toast.makeText(requireContext(), "Izvajam storno računa #" + racunId + "...", Toast.LENGTH_SHORT).show();
+        // [DEBUG-TOAST] Toast.makeText(requireContext(), "Izvajam storno računa #" + racunId + "...", Toast.LENGTH_SHORT).show();
 
         final int finalOsebaId = osebaId;
         final int finalVerzija = verzija;
@@ -1084,13 +1090,13 @@ public class RacuniFragment extends Fragment implements RacunSeznamAdapter.OnIte
                             BluetoothPrintHelper.printReceiptComplete(requireContext(), finalStornoRacun, new BluetoothPrintHelper.OnPrintListener() {
                                 @Override
                                 public void onStart() {
-                                    Toast.makeText(requireContext(), "Tiskanje storno računa #" + finalStornoRacunId + "...", Toast.LENGTH_SHORT).show();
+                                    // [DEBUG-TOAST] Toast.makeText(requireContext(), "Tiskanje storno računa #" + finalStornoRacunId + "...", Toast.LENGTH_SHORT).show();
                                 }
 
                                 @Override
                                 public void onSuccess(String message) {
                                     if (getContext() != null) {
-                                        Toast.makeText(requireContext(), "Storno račun #" + finalStornoRacunId + " natisnjen.", Toast.LENGTH_SHORT).show();
+                                        // [DEBUG-TOAST] Toast.makeText(requireContext(), "Storno račun #" + finalStornoRacunId + " natisnjen.", Toast.LENGTH_SHORT).show();
                                     }
                                 }
 
@@ -1184,7 +1190,7 @@ public class RacuniFragment extends Fragment implements RacunSeznamAdapter.OnIte
             try {
                 String serverUrl = prefs.getServerUrl();
                 String token = prefs.getToken();
-                int tocilnicaId = (g.getTocilnicaId() != null && g.getTocilnicaId() > 0) ? g.getTocilnicaId() : 512200;
+                int tocilnicaId = (g.getTocilnicaId() != null && g.getTocilnicaId() > 0) ? g.getTocilnicaId() : 0;
                 int osebaId = g.isDovoljeno(PraviceConsts.SIzvedeKompletenFinancniPregled) ? 0 : (g.getTekocaOsebaId() > 0 ? g.getTekocaOsebaId() : 1);
 
                 si.ros.RosKasa.models.SoapReportResult res = RosKasaSoapClient.financniPregled2(serverUrl, token, tocilnicaId, osebaId);
@@ -1282,7 +1288,7 @@ public class RacuniFragment extends Fragment implements RacunSeznamAdapter.OnIte
                 try {
                     String serverUrl = prefs.getServerUrl();
                     String token = prefs.getToken();
-                    int tocilnicaId = (g.getTocilnicaId() != null && g.getTocilnicaId() > 0) ? g.getTocilnicaId() : 512200;
+                    int tocilnicaId = (g.getTocilnicaId() != null && g.getTocilnicaId() > 0) ? g.getTocilnicaId() : 0;
                     String repFormat = (g.getReportFormat() != null && !g.getReportFormat().trim().isEmpty())
                             ? g.getReportFormat().trim() : "ESC/POS";
 
@@ -1433,7 +1439,7 @@ public class RacuniFragment extends Fragment implements RacunSeznamAdapter.OnIte
                     }
                     mainHandler.post(() -> {
                         binding.pbLoading.setVisibility(View.GONE);
-                        Toast.makeText(requireContext(), "Marker posodobljen v: " + clean, Toast.LENGTH_SHORT).show();
+                        // [DEBUG-TOAST] Toast.makeText(requireContext(), "Marker posodobljen v: " + clean, Toast.LENGTH_SHORT).show();
                         loadRacuniFromApi();
                     });
                 } catch (Exception e) {

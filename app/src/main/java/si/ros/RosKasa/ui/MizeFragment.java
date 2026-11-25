@@ -77,7 +77,7 @@ public class MizeFragment extends Fragment {
             }
         });
 
-        binding.btnOdjava.setVisibility(Globals.getInstance().ispLogout() ? View.VISIBLE : View.GONE);
+        binding.btnOdjava.setVisibility(Globals.getInstance().ispLogout() ? View.VISIBLE : View.INVISIBLE);
         binding.btnOdjava.setOnClickListener(v -> {
             Globals.getInstance().vpisiKronologijo("Odjava osebe (Mize)");
             Globals.getInstance().posljiOfflineKronologijo();
@@ -99,7 +99,8 @@ public class MizeFragment extends Fragment {
         updateNatakarInfo();
         setupRajoniBar();
         setupMizeGrid();
-        loadOpenTablesData();
+        // Takoj izriši znane mize iz predpomnilnika, nato onResume osveži zasednost s strežnika (brez dvojnega SOAP klica)
+        populateMizeGrid(lastLoadedOpenAccounts);
     }
 
     private void updateNatakarInfo() {
@@ -185,9 +186,10 @@ public class MizeFragment extends Fragment {
     private void setupMizeGrid() {
         mizeAdapter = new MizeAdapter(miza -> {
             Globals g = Globals.getInstance();
-            // Preveri pravico SVidiVseRacune, če je mizo odprl drug natakar
+            // Preveri pravico SVidiVseRacune / SVidiVsaNarocila, če je mizo odprl drug natakar
             if (miza.isOccupied && miza.kasiralOsebaId > 0 && miza.kasiralOsebaId != g.getTekocaOsebaId()) {
-                if (!g.isDovoljeno(si.ros.RosKasa.models.PraviceConsts.SVidiVseRacune)) {
+                if (!g.isDovoljeno(si.ros.RosKasa.models.PraviceConsts.SVidiVseRacune)
+                        && !g.isDovoljeno(si.ros.RosKasa.models.PraviceConsts.SVidiVsaNarocila)) {
                     String natakarIme = !miza.kasiralNaziv.isEmpty() ? miza.kasiralNaziv : miza.kasiralInicialke;
                     Toast.makeText(requireContext(), "Miza je zasedena (odprl: " + natakarIme + ")!\nNimate pravice za odpiranje računov drugih natakarjev.", Toast.LENGTH_LONG).show();
                     return;
@@ -225,20 +227,29 @@ public class MizeFragment extends Fragment {
         return sdf.format(cal.getTime());
     }
 
+    private volatile boolean isLoadingTables = false;
+
     private void loadOpenTablesData() {
         if (!prefs.isRegistered()) {
             populateMizeGrid(new ArrayList<>());
             return;
+        }
+        if (isLoadingTables) return;
+        isLoadingTables = true;
+        if (binding != null && binding.layoutMizeLoading != null) {
+            binding.layoutMizeLoading.setVisibility(View.VISIBLE);
         }
 
         String odDatum = calculateOdDatum();
 
         executor.execute(() -> {
             try {
-                // Klic getRacuniSeznam s filtrom po osebi (SVidiVsaNarocila / OdpriVseRacune) in STRM_ID
+                // Klic getRacuniSeznam za STATUS=1: Vidi vse račune ALI Vidi Vsa Narocila vidita vse STATUS=1; sicer le lastne
                 Globals g = Globals.getInstance();
-                int pOseba = (g.isDovoljeno(si.ros.RosKasa.models.PraviceConsts.SVidiVsaNarocila) || g.isOdpriVseRacune())
-                        ? 0 : g.getTekocaOsebaId();
+                boolean vidiVsaOdprta = g.isDovoljeno(si.ros.RosKasa.models.PraviceConsts.SVidiVseRacune)
+                        || g.isDovoljeno(si.ros.RosKasa.models.PraviceConsts.SVidiVsaNarocila)
+                        || g.isOdpriVseRacune();
+                int pOseba = vidiVsaOdprta ? 0 : g.getTekocaOsebaId();
                 int strmId = (g.getTocilnicaId() != null && g.getTocilnicaId() > 0)
                         ? g.getTocilnicaId() : prefs.getTocilnicaId();
                 List<RacunSeznamItem> openAccounts = RosKasaSoapClient.getRacuniSeznam(
@@ -252,11 +263,25 @@ public class MizeFragment extends Fragment {
                 );
 
                 mainHandler.post(() -> {
-                    populateMizeGrid(openAccounts != null ? openAccounts : new ArrayList<>());
+                    isLoadingTables = false;
+                    if (binding != null && binding.layoutMizeLoading != null) {
+                        binding.layoutMizeLoading.setVisibility(View.GONE);
+                    }
+                    if (binding != null) {
+                        populateMizeGrid(openAccounts != null ? openAccounts : new ArrayList<>());
+                    }
                 });
             } catch (Exception e) {
                 Log.e(TAG, "Napaka pri nalaganju zasednosti miz iz getRacuniSeznam", e);
-                mainHandler.post(() -> populateMizeGrid(new ArrayList<>()));
+                mainHandler.post(() -> {
+                    isLoadingTables = false;
+                    if (binding != null && binding.layoutMizeLoading != null) {
+                        binding.layoutMizeLoading.setVisibility(View.GONE);
+                    }
+                    if (binding != null) {
+                        populateMizeGrid(new ArrayList<>());
+                    }
+                });
             }
         });
     }

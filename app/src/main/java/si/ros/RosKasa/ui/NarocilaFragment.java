@@ -251,12 +251,13 @@ public class NarocilaFragment extends Fragment {
         int newId = Globals.getNextNegativeRacunId();
         currentRacun = new RacunTp(newId, activeMarker);
         currentRacun.setStatus(1);
-        currentRacun.setKasiral(9999);
-        int toc = prefs.getTocilnicaId() > 0 ? prefs.getTocilnicaId() : 512200;
+        int tekocaOseba = Globals.getInstance().getTekocaOsebaId();
+        currentRacun.setKasiral(tekocaOseba > 0 ? tekocaOseba : Globals.getInstance().getTekocaOsebaId());
+        int toc = prefs.getTocilnicaId() > 0 ? prefs.getTocilnicaId() : 0;
         currentRacun.setTocilnicaId(toc);
-        int fpos = prefs.getfPosId() > 0 ? prefs.getfPosId() : 500;
+        int fpos = prefs.getfPosId() > 0 ? prefs.getfPosId() : 0;
         currentRacun.setfPosId(fpos);
-        int fpp = prefs.getfPoslovniProstorId() > 0 ? prefs.getfPoslovniProstorId() : 5000;
+        int fpp = prefs.getfPoslovniProstorId() > 0 ? prefs.getfPoslovniProstorId() : 0;
         currentRacun.setfPoslovniProstorId(fpp);
         currentRacun.setTipRacuna(1);
         currentRacun.setStPogrinjkov(1);
@@ -475,7 +476,7 @@ public class NarocilaFragment extends Fragment {
         binding.btnNavRacuni.setEnabled(false);
         binding.btnNavPlacila.setEnabled(false);
         if (msg != null && !msg.isEmpty() && getContext() != null) {
-            Toast.makeText(requireContext(), msg, Toast.LENGTH_SHORT).show();
+            // [DEBUG-TOAST] Toast.makeText(requireContext(), msg, Toast.LENGTH_SHORT).show();
         }
     }
 
@@ -706,7 +707,7 @@ public class NarocilaFragment extends Fragment {
 
         cenikItems.clear();
         int stroskovnoId = prefs.getHisObrat();
-        if (stroskovnoId == 0) stroskovnoId = 512200;
+        if (stroskovnoId == 0) stroskovnoId = 0;
 
         final int finalStroskovnoId = stroskovnoId;
 
@@ -1073,7 +1074,7 @@ public class NarocilaFragment extends Fragment {
             }
         }
         int nivo1Id = (ci != null && ci.nivo1Id != 0) ? ci.nivo1Id : 1;
-        int tocilnicaId = prefs.getTocilnicaId() > 0 ? prefs.getTocilnicaId() : (g.getTocilnicaId() != null && g.getTocilnicaId() > 0 ? g.getTocilnicaId() : 512200);
+        int tocilnicaId = prefs.getTocilnicaId() > 0 ? prefs.getTocilnicaId() : (g.getTocilnicaId() != null && g.getTocilnicaId() > 0 ? g.getTocilnicaId() : 0);
         int kuhinjaId = prefs.getKuhinjaId() > 0 ? prefs.getKuhinjaId() : (g.getKuhinjaId() != null && g.getKuhinjaId() > 0 ? g.getKuhinjaId() : 512600);
         // IZVOR_STRM_ID: iz cenika; če 0 -> KUHINJA_ID za NIVO1_ID == 2 (hrana), sicer TOCILNICA_ID
         int izvorStrmId = (ci != null && ci.izvorStrmId > 0)
@@ -1594,7 +1595,7 @@ public class NarocilaFragment extends Fragment {
 
         binding.btnNavPlacila.setOnClickListener(v -> checkUnpostedAndNavigate(new PlacilaFragment()));
 
-        binding.btnOdjava.setVisibility(Globals.getInstance().ispLogout() ? View.VISIBLE : View.GONE);
+        binding.btnOdjava.setVisibility(Globals.getInstance().ispLogout() ? View.VISIBLE : View.INVISIBLE);
         binding.btnOdjava.setOnClickListener(v -> {
             if (hasUnpostedChanges()) {
                 new androidx.appcompat.app.AlertDialog.Builder(requireContext())
@@ -1875,14 +1876,15 @@ public class NarocilaFragment extends Fragment {
                 // 2. Nastavitev parametrov za naročilo
                 currentRacun.setStatus(1);
                 currentRacun.setMarker(activeMarker);
-                int fPosId = prefs.getfPosId() > 0 ? prefs.getfPosId() : (Globals.getInstance().getfPosId() != null && Globals.getInstance().getfPosId() > 0 ? Globals.getInstance().getfPosId() : 500);
+                int fPosId = prefs.getfPosId() > 0 ? prefs.getfPosId() : (Globals.getInstance().getfPosId() != null && Globals.getInstance().getfPosId() > 0 ? Globals.getInstance().getfPosId() : 0);
                 currentRacun.setfPosId(fPosId);
-                int fPoslovniProstorId = Globals.getInstance().getfPoslovniProstorId() != null && Globals.getInstance().getfPoslovniProstorId() > 0 ? Globals.getInstance().getfPoslovniProstorId() : 5000;
+                int fPoslovniProstorId = Globals.getInstance().getfPoslovniProstorId() != null && Globals.getInstance().getfPoslovniProstorId() > 0 ? Globals.getInstance().getfPoslovniProstorId() : 0;
                 currentRacun.setfPoslovniProstorId(fPoslovniProstorId);
-                int tocId = Globals.getInstance().getTocilnicaId() != null && Globals.getInstance().getTocilnicaId() > 0 ? Globals.getInstance().getTocilnicaId() : 512200;
+                int tocId = Globals.getInstance().getTocilnicaId() != null && Globals.getInstance().getTocilnicaId() > 0 ? Globals.getInstance().getTocilnicaId() : 0;
                 currentRacun.setTocilnicaId(tocId);
                 if (currentRacun.getKasiral() == null || currentRacun.getKasiral() <= 0) {
-                    currentRacun.setKasiral(9999);
+                    int tekocaOseba = Globals.getInstance().getTekocaOsebaId();
+        currentRacun.setKasiral(tekocaOseba > 0 ? tekocaOseba : Globals.getInstance().getTekocaOsebaId());
                 }
                 if (currentRacun.getTipRacuna() == null || currentRacun.getTipRacuna() <= 0) {
                     currentRacun.setTipRacuna(1);
@@ -1919,8 +1921,8 @@ public class NarocilaFragment extends Fragment {
 
             populateOrderItemsFromCurrentRacun();
 
-            String infoMsg = "Naročilo uspešno oddano! (Račun #" + currentRacun.getRacunId() + ", Verzija " + currentRacun.getVerzijaZapisa() + ")";
-            Toast.makeText(requireContext(), infoMsg, Toast.LENGTH_SHORT).show();
+            // [DEBUG-TOAST] String infoMsg = "Naročilo uspešno oddano! (Račun #" + currentRacun.getRacunId() + ", Verzija " + currentRacun.getVerzijaZapisa() + ")";
+            // [DEBUG-TOAST] Toast.makeText(requireContext(), infoMsg, Toast.LENGTH_SHORT).show();
 
             if (targetFragmentOnSuccess != null) {
                 if (getActivity() instanceof MainActivity) {
@@ -2179,7 +2181,7 @@ public class NarocilaFragment extends Fragment {
 
         int tocId = (currentRacun.getTocilnicaId() != null && currentRacun.getTocilnicaId() > 0)
                 ? currentRacun.getTocilnicaId()
-                : (Globals.getInstance().getTocilnicaId() != null && Globals.getInstance().getTocilnicaId() > 0 ? Globals.getInstance().getTocilnicaId() : 512200);
+                : (Globals.getInstance().getTocilnicaId() != null && Globals.getInstance().getTocilnicaId() > 0 ? Globals.getInstance().getTocilnicaId() : 0);
         pl.setTocilnicaId(tocId);
 
         if (currentRacun.getRacPlaci() == null) {
@@ -2268,7 +2270,16 @@ public class NarocilaFragment extends Fragment {
         // 1. ZA VSA HITRA PLAČILA: najprej se preveri ali je račun na serverju, če ni kliče setRacun
         zagotoviRacunNaStrezniku(() -> {
             // 2. Izvede se plačilo in izpis do konca - z dodeljenim placiloId za racplaciTp in metodo za logiko
-            izvediHitroPlaciloPoMetodiInterno(metoda, placiloId, nacinNaziv, zaplacilo);
+            if (Globals.getInstance().isHtPlaciloPotrdi()) {
+            new androidx.appcompat.app.AlertDialog.Builder(requireContext())
+                    .setTitle("Potrditev hitrega plačila")
+                    .setMessage(String.format(Locale.getDefault(), "Želite izvesti hitro plačilo (%s) v znesku %.2f €?", nacinNaziv, zaplacilo))
+                    .setPositiveButton("Da", (d, w) -> izvediHitroPlaciloPoMetodiInterno(metoda, placiloId, nacinNaziv, zaplacilo))
+                    .setNegativeButton("Ne", null)
+                    .show();
+            return;
+        }
+        izvediHitroPlaciloPoMetodiInterno(metoda, placiloId, nacinNaziv, zaplacilo);
         });
     }
 
@@ -2332,14 +2343,15 @@ public class NarocilaFragment extends Fragment {
 
                     currentRacun.setStatus(1);
                     currentRacun.setMarker(activeMarker);
-                    int fPosId = prefs.getfPosId() > 0 ? prefs.getfPosId() : (Globals.getInstance().getfPosId() != null && Globals.getInstance().getfPosId() > 0 ? Globals.getInstance().getfPosId() : 500);
+                    int fPosId = prefs.getfPosId() > 0 ? prefs.getfPosId() : (Globals.getInstance().getfPosId() != null && Globals.getInstance().getfPosId() > 0 ? Globals.getInstance().getfPosId() : 0);
                     currentRacun.setfPosId(fPosId);
-                    int fPoslovniProstorId = Globals.getInstance().getfPoslovniProstorId() != null && Globals.getInstance().getfPoslovniProstorId() > 0 ? Globals.getInstance().getfPoslovniProstorId() : 5000;
+                    int fPoslovniProstorId = Globals.getInstance().getfPoslovniProstorId() != null && Globals.getInstance().getfPoslovniProstorId() > 0 ? Globals.getInstance().getfPoslovniProstorId() : 0;
                     currentRacun.setfPoslovniProstorId(fPoslovniProstorId);
-                    int tocId = Globals.getInstance().getTocilnicaId() != null && Globals.getInstance().getTocilnicaId() > 0 ? Globals.getInstance().getTocilnicaId() : 512200;
+                    int tocId = Globals.getInstance().getTocilnicaId() != null && Globals.getInstance().getTocilnicaId() > 0 ? Globals.getInstance().getTocilnicaId() : 0;
                     currentRacun.setTocilnicaId(tocId);
                     if (currentRacun.getKasiral() == null || currentRacun.getKasiral() <= 0) {
-                        currentRacun.setKasiral(9999);
+                        int tekocaOseba = Globals.getInstance().getTekocaOsebaId();
+        currentRacun.setKasiral(tekocaOseba > 0 ? tekocaOseba : Globals.getInstance().getTekocaOsebaId());
                     }
                     if (currentRacun.getTipRacuna() == null || currentRacun.getTipRacuna() <= 0) {
                         currentRacun.setTipRacuna(1);
@@ -2747,11 +2759,7 @@ public class NarocilaFragment extends Fragment {
         pl.setDelniZnesek(znesekRacuna);
         pl.setZnesek(BigDecimal.ZERO);
 
-        NacPlacTp np = Globals.getInstance().getPlaciloById(placiloId);
-        int kupecId = Globals.getInstance().getKredKarticaKupecId();
-        if (kupecId <= 0 && np != null && np.getKupecId() != null && np.getKupecId() > 0) {
-            kupecId = np.getKupecId().intValue();
-        }
+        int kupecId = Globals.getInstance().resolvePosKupecId(placiloId, stKartice, slipClient, slipMerchant, appIdentifier);
         if (kupecId > 0) {
             pl.setKupecId(kupecId);
             pl.setPartnerId(kupecId);
@@ -2797,7 +2805,7 @@ public class NarocilaFragment extends Fragment {
         slip.setAvtorizacija("PAY");
         int tocId = (currentRacun.getTocilnicaId() != null && currentRacun.getTocilnicaId() > 0)
                 ? currentRacun.getTocilnicaId()
-                : (Globals.getInstance().getTocilnicaId() != null && Globals.getInstance().getTocilnicaId() > 0 ? Globals.getInstance().getTocilnicaId() : 512200);
+                : (Globals.getInstance().getTocilnicaId() != null && Globals.getInstance().getTocilnicaId() > 0 ? Globals.getInstance().getTocilnicaId() : 0);
         slip.setStrmId(tocId);
 
         zakljuciInNatisniHitroPlaciloInterno(pl, nacin, znesekRacuna, slip);
@@ -2861,7 +2869,7 @@ public class NarocilaFragment extends Fragment {
                     pl99.setOriginalObject(null);
                     int tocId = (currentRacun.getTocilnicaId() != null && currentRacun.getTocilnicaId() > 0)
                             ? currentRacun.getTocilnicaId()
-                            : (Globals.getInstance().getTocilnicaId() != null && Globals.getInstance().getTocilnicaId() > 0 ? Globals.getInstance().getTocilnicaId() : 512200);
+                            : (Globals.getInstance().getTocilnicaId() != null && Globals.getInstance().getTocilnicaId() > 0 ? Globals.getInstance().getTocilnicaId() : 0);
                     pl99.setTocilnicaId(tocId);
                     currentRacun.getRacPlaci().add(pl99);
                 }
@@ -2957,7 +2965,7 @@ public class NarocilaFragment extends Fragment {
 
         int tocId = (currentRacun.getTocilnicaId() != null && currentRacun.getTocilnicaId() > 0)
                 ? currentRacun.getTocilnicaId()
-                : (Globals.getInstance().getTocilnicaId() != null && Globals.getInstance().getTocilnicaId() > 0 ? Globals.getInstance().getTocilnicaId() : 512200);
+                : (Globals.getInstance().getTocilnicaId() != null && Globals.getInstance().getTocilnicaId() > 0 ? Globals.getInstance().getTocilnicaId() : 0);
         pl.setTocilnicaId(tocId);
 
         if (currentRacun.getRacPozic() != null) {
@@ -2999,15 +3007,16 @@ public class NarocilaFragment extends Fragment {
         currentRacun.setFiskalizacija(imaFiskalnoPlacilo ? 1 : null);
         currentRacun.setStatus(2); // ZAKLJUČEN račun
         currentRacun.setMarker(activeMarker);
-        int fPosId = prefs.getfPosId() > 0 ? prefs.getfPosId() : (Globals.getInstance().getfPosId() != null && Globals.getInstance().getfPosId() > 0 ? Globals.getInstance().getfPosId() : 500);
+        int fPosId = prefs.getfPosId() > 0 ? prefs.getfPosId() : (Globals.getInstance().getfPosId() != null && Globals.getInstance().getfPosId() > 0 ? Globals.getInstance().getfPosId() : 0);
         currentRacun.setfPosId(fPosId);
-        int fPoslovniProstorId = Globals.getInstance().getfPoslovniProstorId() != null && Globals.getInstance().getfPoslovniProstorId() > 0 ? Globals.getInstance().getfPoslovniProstorId() : 5000;
+        int fPoslovniProstorId = Globals.getInstance().getfPoslovniProstorId() != null && Globals.getInstance().getfPoslovniProstorId() > 0 ? Globals.getInstance().getfPoslovniProstorId() : 0;
         currentRacun.setfPoslovniProstorId(fPoslovniProstorId);
         currentRacun.setTocilnicaId(tocId);
         if (Globals.getInstance().getTekocaOsebaId() > 0) {
             currentRacun.setKasiral(Globals.getInstance().getTekocaOsebaId());
         } else if (currentRacun.getKasiral() == null || currentRacun.getKasiral() <= 0) {
-            currentRacun.setKasiral(9999);
+            int tekocaOseba = Globals.getInstance().getTekocaOsebaId();
+        currentRacun.setKasiral(tekocaOseba > 0 ? tekocaOseba : Globals.getInstance().getTekocaOsebaId());
         }
         if (currentRacun.getTipRacuna() == null || currentRacun.getTipRacuna() <= 0) {
             currentRacun.setTipRacuna(1);

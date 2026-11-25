@@ -6,8 +6,8 @@ import java.util.Locale;
 
 public class KronologijaTp {
     private String opisOperacije;
-    private int osebaId = 9999;
-    private int obratId = 512200;
+    private int osebaId = 0;
+    private int obratId = 0;
     private String datumUra;
 
     public KronologijaTp() {
@@ -18,8 +18,8 @@ public class KronologijaTp {
     public KronologijaTp(String opisOperacije, Integer osebaId, Integer obratId) {
         this();
         setOpisOperacije(opisOperacije);
-        this.osebaId = (osebaId != null) ? osebaId : 9999;
-        this.obratId = (obratId != null) ? obratId : 512200;
+        this.osebaId = (osebaId != null) ? osebaId : 0;
+        this.obratId = (obratId != null) ? obratId : 0;
     }
 
     public String getOpisOperacije() {

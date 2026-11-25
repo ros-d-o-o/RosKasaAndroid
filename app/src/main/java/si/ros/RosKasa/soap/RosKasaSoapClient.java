@@ -75,8 +75,9 @@ public class RosKasaSoapClient {
     }
 
     public static void vpisKronologijeAsyncDirect(String serverUrl, String token, String mobileId, String opisOperacije, Integer osebaId, Integer obratId) {
-        int finalOsebaId = (osebaId != null) ? osebaId : 9999;
-        int finalObratId = (obratId != null) ? obratId : 512200;
+        Globals g = Globals.getInstance();
+        int finalOsebaId = (osebaId != null && osebaId > 0) ? osebaId : g.getTekocaOsebaId();
+        int finalObratId = (obratId != null && obratId > 0) ? obratId : (g.getTocilnicaId() != null && g.getTocilnicaId() > 0 ? g.getTocilnicaId() : g.getHisObrat());
 
         if (opisOperacije != null && opisOperacije.length() > 950) {
             opisOperacije = opisOperacije.substring(0, 950);
@@ -194,7 +195,7 @@ public class RosKasaSoapClient {
         }
 
         String opis = "Klic getOsebaToken za uIme=" + uIme + " -> " + (result.isSuccess() ? "Uspeh" : "Napaka: " + result.getFault());
-        vpisKronologijeAsync(serverUrl, result.getToken() != null ? result.getToken() : "", "", opis, 9999, 512200);
+        vpisKronologijeAsync(serverUrl, result.getToken() != null ? result.getToken() : "", "", opis, 0, 0);
 
         return result;
     }
@@ -223,7 +224,7 @@ public class RosKasaSoapClient {
 
             Log.d(TAG, "aktivirajMobile USPEŠNO za mobileId=" + mobileId);
             String opis = "Klic aktivirajMobile za mobileId=" + mobileId + " -> uspeh";
-            vpisKronologijeAsync(serverUrl, token != null ? token : "", String.valueOf(mobileId), opis, 9999, 512200);
+            vpisKronologijeAsync(serverUrl, token != null ? token : "", String.valueOf(mobileId), opis, 0, 0);
             return true;
         } catch (Exception e) {
             String msg = (e != null && e.getMessage() != null) ? e.getMessage() : (e != null ? e.toString() : "Neznana napaka");
@@ -315,7 +316,7 @@ public class RosKasaSoapClient {
                     ", printerRacuni='" + Globals.getInstance().getPrinterRacuni() + "'");
 
             String opis = "Klic getAppConfig (PRINTER_RACUNI='" + Globals.getInstance().getPrinterRacuni() + "', TIPKE_POS_ID=" + setup.getTipkePosId() + ", HIS_OBRAT=" + setup.getHisObrat() + ") -> uspeh.";
-            vpisKronologijeAsync(serverUrl, token, String.valueOf(finalMobId), opis, 9999, setup.getHisObrat());
+            vpisKronologijeAsync(serverUrl, token, String.valueOf(finalMobId), opis, 0, setup.getTocilnicaId() > 0 ? setup.getTocilnicaId() : setup.getHisObrat());
 
         } catch (Exception e) {
             String msg = (e != null && e.getMessage() != null) ? e.getMessage() : (e != null ? e.toString() : "Neznana napaka");
@@ -324,7 +325,7 @@ public class RosKasaSoapClient {
             notifyError(methodName, errorMsg);
 
             String opis = "Klic getAppConfig NAPAKA: " + msg;
-            vpisKronologijeAsync(serverUrl, token, "", opis, 9999, 512200);
+            vpisKronologijeAsync(serverUrl, token, "", opis, 0, 0);
 
             throw e;
         }
@@ -627,7 +628,7 @@ public class RosKasaSoapClient {
             }
 
             String opis = "Klic getCenik (stroskovnoId=" + stroskovnoId + ") -> USPEH. Naloženih artiklov: " + list.size();
-            vpisKronologijeAsync(serverUrl, token, "", opis, 9999, 512200);
+            vpisKronologijeAsync(serverUrl, token, "", opis, 0, 0);
 
         } catch (Exception e) {
             String msg = (e != null && e.getMessage() != null) ? e.getMessage() : (e != null ? e.toString() : "Neznana napaka");
@@ -636,7 +637,7 @@ public class RosKasaSoapClient {
             notifyError(methodName, errorMsg);
 
             String opis = "Klic getCenik NAPAKA: " + msg;
-            vpisKronologijeAsync(serverUrl, token, "", opis, 9999, 512200);
+            vpisKronologijeAsync(serverUrl, token, "", opis, 0, 0);
             throw e;
         }
 
@@ -880,7 +881,7 @@ public class RosKasaSoapClient {
 
             Globals.getInstance().setCachedDodatki(result);
             String opis = "Klic getDodatki -> USPEH. Naloženih dodatkov/opomb: " + result.size();
-            vpisKronologijeAsync(serverUrl, token, "", opis, 9999, 512200);
+            vpisKronologijeAsync(serverUrl, token, "", opis, 0, 0);
 
         } catch (Exception e) {
             String msg = (e != null && e.getMessage() != null) ? e.getMessage() : (e != null ? e.toString() : "Neznana napaka");
@@ -940,7 +941,7 @@ public class RosKasaSoapClient {
             }
 
             String opis = "Klic getNacPlac2 (mobileId=" + mobileId + ") -> USPEH. Naloženih plačil: " + result.size();
-            vpisKronologijeAsync(serverUrl, token, String.valueOf(mobileId), opis, 9999, 512200);
+            vpisKronologijeAsync(serverUrl, token, String.valueOf(mobileId), opis, 0, 0);
 
         } catch (Exception e) {
             Log.w(TAG, "getNacPlac2 ni uspel, poskus z getNacPlac fallback: " + e.getMessage());
@@ -1078,7 +1079,7 @@ public class RosKasaSoapClient {
         }
         rq.addProperty("STATUS", status);
         if (strmId > 0) {
-            rq.addProperty("STRM_ID", strmId);
+            rq.addProperty("TOCILNICA_ID", strmId);
         }
 
         request.addProperty("rq", rq);
@@ -1142,7 +1143,7 @@ public class RosKasaSoapClient {
             }
 
             String opis = "Klic getRacuniSeznam (STATUS=" + status + ", OD_DATUM=" + odDatum + ") -> pridobljeno " + list.size() + " računov.";
-            vpisKronologijeAsync(serverUrl, token, mobileId, opis, 9999, 512200);
+            vpisKronologijeAsync(serverUrl, token, mobileId, opis, 0, 0);
 
         } catch (Exception e) {
             String msg = (e != null && e.getMessage() != null) ? e.getMessage() : (e != null ? e.toString() : "Neznana napaka");
@@ -1151,7 +1152,7 @@ public class RosKasaSoapClient {
             notifyError(methodName, errorMsg);
 
             String opis = "Klic getRacuniSeznam NAPAKA: " + msg;
-            vpisKronologijeAsync(serverUrl, token, mobileId, opis, 9999, 512200);
+            vpisKronologijeAsync(serverUrl, token, mobileId, opis, 0, 0);
 
             throw e;
         }
@@ -1359,7 +1360,7 @@ public class RosKasaSoapClient {
 
             String opis = "Klic setLojalnost (RACUN_ID=" + racunId + ", BONITETNI_RAZRED=" + bonitetniRazred + ", VERZIJA=" + verzija + ") -> USPEH. Nova VERZIJA=" + (result.getRacGlava() != null ? result.getRacGlava().getVerzijaZapisa() : "?");
             Log.d(TAG, opis);
-            vpisKronologijeAsync(serverUrl, token, "", opis, 9999, 512200);
+            vpisKronologijeAsync(serverUrl, token, "", opis, 0, 0);
         } catch (Exception e) {
             String msg = (e != null && e.getMessage() != null) ? e.getMessage() : (e != null ? e.toString() : "Neznana napaka");
             Log.e(TAG, "setLojalnost napaka: " + msg, e);
@@ -1442,7 +1443,7 @@ public class RosKasaSoapClient {
 
             String opis = "Klic natisniHod (RACUN_ID=" + racunId + ", HOD=" + hod + ") -> USPEH";
             Log.d(TAG, opis);
-            vpisKronologijeAsync(serverUrl, token, "", opis, 9999, 512200);
+            vpisKronologijeAsync(serverUrl, token, "", opis, 0, 0);
         } catch (Exception e) {
             String msg = (e != null && e.getMessage() != null) ? e.getMessage() : (e != null ? e.toString() : "Neznana napaka");
             Log.e(TAG, "natisniHod napaka: " + msg, e);
@@ -1518,7 +1519,7 @@ public class RosKasaSoapClient {
             }
 
             String opis = "Klic setStornoRacuna (RACUN_ID=" + racunId + ", RAZLOG=" + stornoRazlogId + ", NOVO=" + novoNarocilo + ") -> data1=" + res.getData1() + ", data2=" + res.getData2() + ", fault=" + res.getFault();
-            vpisKronologijeAsync(serverUrl, token, "", opis, 9999, 512200);
+            vpisKronologijeAsync(serverUrl, token, "", opis, 0, 0);
 
         } catch (Exception e) {
             String msg = (e != null && e.getMessage() != null) ? e.getMessage() : (e != null ? e.toString() : "Neznana napaka");
@@ -2788,7 +2789,7 @@ public class RosKasaSoapClient {
             }
 
             String opis = "Klic getHitreTipke (stroskovnoId=" + stroskovnoId + ") -> pridobljeno " + list.size() + " hitrih tipk.";
-            vpisKronologijeAsync(serverUrl, token, "", opis, 9999, 512200);
+            vpisKronologijeAsync(serverUrl, token, "", opis, 0, 0);
 
         } catch (Exception e) {
             String msg = (e != null && e.getMessage() != null) ? e.getMessage() : (e != null ? e.toString() : "Neznana napaka");
@@ -2797,7 +2798,7 @@ public class RosKasaSoapClient {
             notifyError(methodName, errorMsg);
 
             String opis = "Klic getHitreTipke NAPAKA: " + msg;
-            vpisKronologijeAsync(serverUrl, token, "", opis, 9999, 512200);
+            vpisKronologijeAsync(serverUrl, token, "", opis, 0, 0);
 
             throw e;
         }
@@ -3329,13 +3330,13 @@ public class RosKasaSoapClient {
             }
 
             String opis = "Klic getRacuni (RACUN_ID=" + racunId + ") -> " + (racun != null ? "Naložen račun V=" + racun.getVerzijaZapisa() + " Pozicij=" + (racun.getRacPozic() != null ? racun.getRacPozic().size() : 0) : "Ni podatkov");
-            vpisKronologijeAsync(serverUrl, token, "", opis, 9999, 512200);
+            vpisKronologijeAsync(serverUrl, token, "", opis, 0, 0);
 
         } catch (Exception e) {
             String msg = (e != null && e.getMessage() != null) ? e.getMessage() : (e != null ? e.toString() : "Neznana napaka");
             Log.e(TAG, "getRacun napaka: " + msg, e);
             notifyError(methodName, "getRacun napaka: " + msg);
-            vpisKronologijeAsync(serverUrl, token, "", "Klic getRacun NAPAKA: R:" + racunId + " " + msg, 9999, 512200);
+            vpisKronologijeAsync(serverUrl, token, "", "Klic getRacun NAPAKA: R:" + racunId + " " + msg, 0, 0);
             throw e;
         }
 
@@ -3416,19 +3417,19 @@ public class RosKasaSoapClient {
             }
 
             String opis = "Klic setRacun (RACUN_ID=" + racun.getRacunId() + ", STATUS=" + racun.getStatus() + ") -> USPEH. Nova VERZIJA=" + (result.getRacGlava() != null ? result.getRacGlava().getVerzijaZapisa() : "?");
-            vpisKronologijeAsync(serverUrl, token, String.valueOf(mobileId), opis, 9999, 512200);
+            vpisKronologijeAsync(serverUrl, token, String.valueOf(mobileId), opis, 0, 0);
 
         } catch (VersionConflictException vce) {
             String opis = "Klic setRacun KONFLIKT VERZIJE: R:" + racun.getRacunId() + " " + vce.getMessage();
             Log.w(TAG, opis);
-            vpisKronologijeAsync(serverUrl, token, String.valueOf(mobileId), opis, 9999, 512200);
+            vpisKronologijeAsync(serverUrl, token, String.valueOf(mobileId), opis, 0, 0);
             throw vce;
         } catch (Exception e) {
             String msg = (e != null && e.getMessage() != null) ? e.getMessage() : (e != null ? e.toString() : "Neznana napaka");
             String opis = "Klic setRacun NAPAKA: R:" + racun.getRacunId() + " " + msg;
             Log.e(TAG, opis, e);
             notifyError(methodName, opis);
-            vpisKronologijeAsync(serverUrl, token, String.valueOf(mobileId), opis, 9999, 512200);
+            vpisKronologijeAsync(serverUrl, token, String.valueOf(mobileId), opis, 0, 0);
             throw e;
         }
 
@@ -3469,13 +3470,13 @@ public class RosKasaSoapClient {
 
         int fPoslovniProstorId = (racun.getfPoslovniProstorId() != null && racun.getfPoslovniProstorId() > 0)
                 ? racun.getfPoslovniProstorId()
-                : (Globals.getInstance().getfPoslovniProstorId() != null && Globals.getInstance().getfPoslovniProstorId() > 0 ? Globals.getInstance().getfPoslovniProstorId() : 5000);
+                : (Globals.getInstance().getfPoslovniProstorId() != null && Globals.getInstance().getfPoslovniProstorId() > 0 ? Globals.getInstance().getfPoslovniProstorId() : 0);
         soap.addProperty("F_POSLOVNI_PROSTOR_ID", fPoslovniProstorId);
 
         int tipkePosIdVal = Globals.getInstance().getTipkePosId();
         int fPosId = (racun.getfPosId() != null && racun.getfPosId() > 0 && (tipkePosIdVal <= 0 || racun.getfPosId() != tipkePosIdVal || racun.getfPosId() == Globals.getInstance().getfPosId()))
                 ? racun.getfPosId()
-                : (Globals.getInstance().getfPosId() != null && Globals.getInstance().getfPosId() > 0 ? Globals.getInstance().getfPosId() : 500);
+                : (Globals.getInstance().getfPosId() != null && Globals.getInstance().getfPosId() > 0 ? Globals.getInstance().getfPosId() : 0);
         soap.addProperty("F_POS_ID", fPosId);
 
         if (racun.getfPrintKoda() != null && !racun.getfPrintKoda().isEmpty()) {
@@ -3488,7 +3489,7 @@ public class RosKasaSoapClient {
             soap.addProperty("F_STEVILKA_RACUNA", racun.getfStevilkaRacuna());
         }
 
-        int kasiral = (racun.getKasiral() != null && racun.getKasiral() > 0) ? racun.getKasiral() : 9999;
+        int kasiral = (racun.getKasiral() != null && racun.getKasiral() > 0) ? racun.getKasiral() : Globals.getInstance().getTekocaOsebaId();
         soap.addProperty("KASIRAL", kasiral);
 
         if (racun.getLojalnostId() != null && racun.getLojalnostId() != 0) {
@@ -3558,7 +3559,7 @@ public class RosKasaSoapClient {
 
         int tocilnicaId = (racun.getTocilnicaId() != null && racun.getTocilnicaId() > 0)
                 ? racun.getTocilnicaId()
-                : (Globals.getInstance().getTocilnicaId() != null && Globals.getInstance().getTocilnicaId() > 0 ? Globals.getInstance().getTocilnicaId() : 512200);
+                : (Globals.getInstance().getTocilnicaId() != null && Globals.getInstance().getTocilnicaId() > 0 ? Globals.getInstance().getTocilnicaId() : 0);
         soap.addProperty("TOCILNICA_ID", tocilnicaId);
 
         // URA: 1899-12-30THH:mm:ssZ (lokalni čas naprave, enako kot Kronologija)
@@ -3665,25 +3666,25 @@ public class RosKasaSoapClient {
 
         int mobileIdDef = Globals.getInstance().getMobileId() > 0 ? Globals.getInstance().getMobileId() : 1;
         int tipkePosId = Globals.getInstance().getTipkePosId();
-        int fPosIdVal = Globals.getInstance().getfPosId() != null && Globals.getInstance().getfPosId() > 0 ? Globals.getInstance().getfPosId() : 500;
+        int fPosIdVal = Globals.getInstance().getfPosId() != null && Globals.getInstance().getfPosId() > 0 ? Globals.getInstance().getfPosId() : 0;
         int posId = (poz.getPosId() != null && poz.getPosId() > 0 && (tipkePosId <= 0 || poz.getPosId() != tipkePosId || poz.getPosId() == fPosIdVal))
                 ? poz.getPosId()
                 : (mobileIdDef > 0 ? mobileIdDef : 1);
         soap.addProperty("POS_ID", posId);
 
-        int natakarId = (poz.getNatakarId() != null && poz.getNatakarId() > 0) ? poz.getNatakarId() : 9999;
+        int natakarId = (poz.getNatakarId() != null && poz.getNatakarId() > 0) ? poz.getNatakarId() : Globals.getInstance().getTekocaOsebaId();
         soap.addProperty("NATAKAR_ID", natakarId);
 
-        int tocilnicaId = (poz.getTocilnicaId() != null && poz.getTocilnicaId() > 0) ? poz.getTocilnicaId() : 512200;
+        int tocilnicaId = (poz.getTocilnicaId() != null && poz.getTocilnicaId() > 0) ? poz.getTocilnicaId() : 0;
         soap.addProperty("TOCILNICA_ID", tocilnicaId);
 
         int kuhinjaId = (poz.getKuhinjaId() != null && poz.getKuhinjaId() > 0) ? poz.getKuhinjaId() : 512600;
         soap.addProperty("KUHINJA_ID", kuhinjaId);
 
-        int izvorStrmId = (poz.getIzvorStrmId() != null && poz.getIzvorStrmId() > 0) ? poz.getIzvorStrmId() : 512200;
+        int izvorStrmId = (poz.getIzvorStrmId() != null && poz.getIzvorStrmId() > 0) ? poz.getIzvorStrmId() : 0;
         soap.addProperty("IZVOR_STRM_ID", izvorStrmId);
 
-        int izvorPrihodekId = (poz.getIzvorPrihodekId() != null && poz.getIzvorPrihodekId() > 0) ? poz.getIzvorPrihodekId() : 512200;
+        int izvorPrihodekId = (poz.getIzvorPrihodekId() != null && poz.getIzvorPrihodekId() > 0) ? poz.getIzvorPrihodekId() : 0;
         soap.addProperty("IZVOR_PRIHODEK_ID", izvorPrihodekId);
 
         int tarifaId = (poz.getTarifaId() != null && poz.getTarifaId() > 0) ? poz.getTarifaId() : 40;
@@ -3833,7 +3834,7 @@ public class RosKasaSoapClient {
         // 13. TOCILNICA_ID
         int tocilnicaId = (pl.getTocilnicaId() != null && pl.getTocilnicaId() > 0)
                 ? pl.getTocilnicaId()
-                : (Globals.getInstance().getTocilnicaId() != null && Globals.getInstance().getTocilnicaId() > 0 ? Globals.getInstance().getTocilnicaId() : 512200);
+                : (Globals.getInstance().getTocilnicaId() != null && Globals.getInstance().getTocilnicaId() > 0 ? Globals.getInstance().getTocilnicaId() : 0);
         soap.addProperty("TOCILNICA_ID", tocilnicaId);
 
         // 14. URA: 1899-12-30THH:mm:ssZ (lokalni čas naprave)

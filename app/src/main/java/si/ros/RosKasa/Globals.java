@@ -307,6 +307,9 @@ public class Globals {
     private int izpisaniVidniDo = 0;
     private int maxDniNazaj = 365;
     private int narociloStornoDo = 0;
+    private boolean htPlaciloPotrdi = false;
+    private String placilaFiksniKupec = "";
+    private List<Integer> placilaFiksniKupecIds = new ArrayList<>();
     private String placilaPodpis = "";
     private List<Integer> placilaPodpisId = new ArrayList<>();
     private boolean brezVirtualKeyboard = false;
@@ -384,7 +387,7 @@ public class Globals {
     private int zadnjiSlipRacunId = 0;
     private boolean obracunAndroid = false;
     private boolean payTenA = false;
-    private String payTenARosPackage = "si.ros.RosKasaLight2";
+    private String payTenARosPackage = "si.ros.RosKasa";
     private String payTenAActivityMain = "com.payten.nlb.slovenia";
     private String payTenAActivities = "com.payten.nlb.slovenia.activities.SplashActivity";
     private String payTenAPin = "";
@@ -553,14 +556,15 @@ public class Globals {
         String sUrl = (serverUrl != null && !serverUrl.isEmpty()) ? serverUrl : this.serverUrl;
         String tok = (token != null && !token.isEmpty()) ? token : this.token;
         String mob = (mobileId != null && !mobileId.isEmpty()) ? mobileId : String.valueOf(this.mobileId);
-        int osId = (osebaId != null && osebaId != 0) ? osebaId : (this.tekocaOsebaId != 0 ? this.tekocaOsebaId : 9999);
-        int obId = (obratId != null && obratId != 0) ? obratId : (this.tocilnicaId != 0 ? this.tocilnicaId : (this.hisObrat != 0 ? this.hisObrat : 512200));
+        int osId = (osebaId != null && osebaId != 0) ? osebaId : this.tekocaOsebaId;
+        int obId = (obratId != null && obratId != 0) ? obratId : (this.tocilnicaId != 0 ? this.tocilnicaId : this.hisObrat);
 
         String finalOpis = opisOperacije != null ? opisOperacije : "";
         if (!finalOpis.startsWith("MAID:")) {
+            finalOpis = finalOpis.replace("RACUN_ID=", "R:");
             String trimmed = finalOpis.length() > 900 ? finalOpis.substring(0, 900) : finalOpis;
             String timeStr = new SimpleDateFormat("HH:mm:ss.SSS", Locale.US).format(new Date());
-            finalOpis = "MAID:" + mob + " " + trimmed + " RosKasaLight/" + timeStr;
+            finalOpis = "MAID:" + mob + " " + trimmed + " RosKasa/" + timeStr;
         }
 
         // Shranimo v lokalni pomnilnik da lahko v primeru crash dobimo zapise (Delphi frmKasaMobile.KronologNaDisk)
@@ -968,6 +972,11 @@ public class Globals {
         if (kvPairs.containsKey("IZPISANIVIDNIDO")) { try { this.izpisaniVidniDo = Integer.parseInt(kvPairs.get("IZPISANIVIDNIDO")); } catch (Exception ignored) {} }
         if (kvPairs.containsKey("MAXDNINAZAJ")) { try { int v = Integer.parseInt(kvPairs.get("MAXDNINAZAJ")); if (v > 0) this.maxDniNazaj = v; } catch (Exception ignored) {} }
         if (kvPairs.containsKey("NAROCILOSTORNODO")) { try { this.narociloStornoDo = Integer.parseInt(kvPairs.get("NAROCILOSTORNODO")); } catch (Exception ignored) {} }
+        if (kvPairs.containsKey("HTPLACILOPOTRDI")) this.htPlaciloPotrdi = "D".equalsIgnoreCase(kvPairs.get("HTPLACILOPOTRDI"));
+        if (kvPairs.containsKey("PLACILA_FIKSNI_KUPEC")) {
+            this.placilaFiksniKupec = kvPairs.get("PLACILA_FIKSNI_KUPEC");
+            parseIntegerList(this.placilaFiksniKupec, this.placilaFiksniKupecIds);
+        }
         if (kvPairs.containsKey("PLACILAPODPIS")) {
             this.placilaPodpis = kvPairs.get("PLACILAPODPIS");
             parseIntegerList(this.placilaPodpis, this.placilaPodpisId);
@@ -1863,6 +1872,9 @@ public class Globals {
     public int getIzpisaniVidniDo() { return izpisaniVidniDo; }
     public int getMaxDniNazaj() { return maxDniNazaj > 0 ? maxDniNazaj : 365; }
     public int getNarociloStornoDo() { return narociloStornoDo; }
+    public boolean isHtPlaciloPotrdi() { return htPlaciloPotrdi; }
+    public String getPlacilaFiksniKupec() { return placilaFiksniKupec; }
+    public boolean isPlaciloFiksniKupec(int placiloId) { return placilaFiksniKupecIds.contains(placiloId); }
     public String getPlacilaPodpis() { return placilaPodpis; }
     public List<Integer> getPlacilaPodpisId() { return placilaPodpisId; }
     public boolean isBrezVirtualKeyboard() { return brezVirtualKeyboard; }
@@ -2478,6 +2490,30 @@ public class Globals {
         if (overrideStornoPoslanoNarocilo) return true;
         if (niStornoIzpisanegaNarocila) return false;
         return isDovoljeno(si.ros.RosKasa.models.PraviceConsts.SStorniraPoslanoNarocilo);
+    }
+
+    /**
+     * Določi KUPEC_ID za POS kartično plačilo (SixTap / PayTen) po Delphi pravilih:
+     * 1. Če katerikoli izmed podatkov o kartici/slipu vsebuje "DINERS" in je KREDKARTICA_KUPECID_DINERS > 0 -> KREDKARTICA_KUPECID_DINERS
+     * 2. Sicer če je KREDKARTICA_KUPECID > 0 -> KREDKARTICA_KUPECID
+     * 3. Sicer fallback na NACPLAC.KUPEC_ID
+     */
+    public int resolvePosKupecId(int placiloId, String... cardHints) {
+        if (kredKarticaKupecIdDiners > 0 && cardHints != null) {
+            for (String hint : cardHints) {
+                if (hint != null && hint.toUpperCase(java.util.Locale.ROOT).contains("DINERS")) {
+                    return kredKarticaKupecIdDiners;
+                }
+            }
+        }
+        if (kredKarticaKupecId > 0) {
+            return kredKarticaKupecId;
+        }
+        NacPlacTp np = getPlaciloById(placiloId);
+        if (np != null && np.getKupecId() != null && np.getKupecId() > 0) {
+            return np.getKupecId().intValue();
+        }
+        return 0;
     }
 
     public synchronized boolean hasCachedStornoRazlogi() {

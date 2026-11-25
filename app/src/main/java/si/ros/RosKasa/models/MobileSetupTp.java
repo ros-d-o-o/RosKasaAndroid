@@ -2,12 +2,12 @@ package si.ros.RosKasa.models;
 
 public class MobileSetupTp {
     private int mobileId;
-    private int tipkePosId = 512200;
+    private int tipkePosId = 0;
     private Integer fPoslovniProstorId;
     private Integer fPosId;
     private Integer kuhinjaId;
     private Integer tocilnicaId;
-    private int hisObrat = 512200;
+    private int hisObrat = 0;
     private int hisDestinacija;
     private Integer fiskalizacija;
     private String firma;

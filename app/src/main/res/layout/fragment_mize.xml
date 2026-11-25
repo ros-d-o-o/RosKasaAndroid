@@ -133,13 +133,47 @@
             android:orientation="horizontal" />
     </HorizontalScrollView>
 
-    <!-- Mreža miz (Mize 1 do N) -->
-    <androidx.recyclerview.widget.RecyclerView
-        android:id="@+id/rvMizeGrid"
+    <!-- Mreža miz (Mize 1 do N) + indikator nalaganja -->
+    <FrameLayout
         android:layout_width="match_parent"
         android:layout_height="0dp"
         android:layout_weight="1"
-        android:padding="2dp"
-        android:background="#1B1B1B" />
+        android:background="#1B1B1B">
+
+        <androidx.recyclerview.widget.RecyclerView
+            android:id="@+id/rvMizeGrid"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:padding="2dp" />
+
+        <LinearLayout
+            android:id="@+id/layoutMizeLoading"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_gravity="center"
+            android:orientation="horizontal"
+            android:gravity="center_vertical"
+            android:background="#CC222222"
+            android:paddingStart="16dp"
+            android:paddingEnd="16dp"
+            android:paddingTop="10dp"
+            android:paddingBottom="10dp"
+            android:visibility="gone">
+
+            <ProgressBar
+                android:layout_width="24dp"
+                android:layout_height="24dp"
+                android:indeterminate="true" />
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="10dp"
+                android:text="Nalagam mize..."
+                android:textColor="#FFFFFF"
+                android:textSize="14sp"
+                android:textStyle="bold" />
+        </LinearLayout>
+    </FrameLayout>
 
 </LinearLayout>

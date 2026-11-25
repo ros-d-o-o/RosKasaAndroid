@@ -117,7 +117,7 @@ public class ZdruziRacuneDialog {
                                 Toast.makeText(context, "Napaka pri združitvi: " + fault, Toast.LENGTH_LONG).show();
                                 btnPotrdiZdruzi.setEnabled(true);
                             } else {
-                                Toast.makeText(context, "Računi so bili uspešno združeni!", Toast.LENGTH_SHORT).show();
+                                // [DEBUG-TOAST] Toast.makeText(context, "Računi so bili uspešno združeni!", Toast.LENGTH_SHORT).show();
                                 dialog.dismiss();
                                 if (listener != null) listener.onZdruzeni();
                             }

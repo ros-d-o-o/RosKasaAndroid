@@ -11,10 +11,10 @@ public class RacunTp {
     private String marker = ""; // miza npr. "Miza 5"
     private BigDecimal znesek = BigDecimal.ZERO;
     private BigDecimal placano = BigDecimal.ZERO;
-    private Integer kasiral = 9999;
-    private Integer fPosId = 500;
-    private Integer fPoslovniProstorId = 5000;
-    private Integer tocilnicaId = 512200;
+    private Integer kasiral = 0;
+    private Integer fPosId = 0;
+    private Integer fPoslovniProstorId = 0;
+    private Integer tocilnicaId = 0;
     private Integer blagId;
     private Integer tip;
     private Integer tipRacuna = 1;

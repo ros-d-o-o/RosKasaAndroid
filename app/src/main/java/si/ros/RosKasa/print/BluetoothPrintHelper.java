@@ -89,7 +89,7 @@ public class BluetoothPrintHelper {
                 Globals g = Globals.getInstance();
                 int tocilnicaId = (racun.getTocilnicaId() != null && racun.getTocilnicaId() > 0)
                         ? racun.getTocilnicaId()
-                        : (g.getTocilnicaId() != null && g.getTocilnicaId() > 0 ? g.getTocilnicaId() : 512200);
+                        : (g.getTocilnicaId() != null && g.getTocilnicaId() > 0 ? g.getTocilnicaId() : 0);
 
                 int osebaId = g.getTekocaOsebaId() > 0
                         ? g.getTekocaOsebaId()

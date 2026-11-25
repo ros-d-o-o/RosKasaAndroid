@@ -386,10 +386,10 @@ public class SplitRacunDialog {
                             noviRacun.setRacunId(Globals.getNextNegativeRacunId());
                             noviRacun.setMarker(baseMarker + "_" + (idx + 1));
                             noviRacun.setStatus(1);
-                            noviRacun.setTocilnicaId(originalRacun.getTocilnicaId() != null && originalRacun.getTocilnicaId() > 0 ? originalRacun.getTocilnicaId() : 512200);
-                            noviRacun.setfPosId(originalRacun.getfPosId() != null && originalRacun.getfPosId() > 0 ? originalRacun.getfPosId() : 500);
-                            noviRacun.setfPoslovniProstorId(originalRacun.getfPoslovniProstorId() != null && originalRacun.getfPoslovniProstorId() > 0 ? originalRacun.getfPoslovniProstorId() : 5000);
-                            noviRacun.setKasiral(Globals.getInstance().getTekocaOsebaId() > 0 ? Globals.getInstance().getTekocaOsebaId() : (originalRacun.getKasiral() != null ? originalRacun.getKasiral() : 9999));
+                            noviRacun.setTocilnicaId(originalRacun.getTocilnicaId() != null && originalRacun.getTocilnicaId() > 0 ? originalRacun.getTocilnicaId() : 0);
+                            noviRacun.setfPosId(originalRacun.getfPosId() != null && originalRacun.getfPosId() > 0 ? originalRacun.getfPosId() : 0);
+                            noviRacun.setfPoslovniProstorId(originalRacun.getfPoslovniProstorId() != null && originalRacun.getfPoslovniProstorId() > 0 ? originalRacun.getfPoslovniProstorId() : 0);
+                            noviRacun.setKasiral(Globals.getInstance().getTekocaOsebaId() > 0 ? Globals.getInstance().getTekocaOsebaId() : (originalRacun.getKasiral() != null ? originalRacun.getKasiral() : Globals.getInstance().getTekocaOsebaId()));
                             noviRacun.setTipRacuna(1);
                             noviRacun.setStPogrinjkov(1);
                             noviRacun.setStKopij(0);
@@ -431,7 +431,7 @@ public class SplitRacunDialog {
 
                         mainHandler.post(() -> {
                             pbLoading.setVisibility(View.GONE);
-                            Toast.makeText(context, "Račun je bil uspešno razdeljen (" + createdMarkers + ")!", Toast.LENGTH_SHORT).show();
+                            // [DEBUG-TOAST] Toast.makeText(context, "Račun je bil uspešno razdeljen (" + createdMarkers + ")!", Toast.LENGTH_SHORT).show();
                             dialog.dismiss();
                             if (listener != null) listener.onSplitComplete();
                         });

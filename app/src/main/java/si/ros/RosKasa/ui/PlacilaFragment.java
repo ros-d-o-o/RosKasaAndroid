@@ -290,7 +290,7 @@ public class PlacilaFragment extends Fragment {
                     pl99.setOriginalObject(null);
                     int tocId = (currentRacun.getTocilnicaId() != null && currentRacun.getTocilnicaId() > 0)
                             ? currentRacun.getTocilnicaId()
-                            : (Globals.getInstance().getTocilnicaId() != null && Globals.getInstance().getTocilnicaId() > 0 ? Globals.getInstance().getTocilnicaId() : 512200);
+                            : (Globals.getInstance().getTocilnicaId() != null && Globals.getInstance().getTocilnicaId() > 0 ? Globals.getInstance().getTocilnicaId() : 0);
                     pl99.setTocilnicaId(tocId);
                     currentRacun.getRacPlaci().add(pl99);
                 }
@@ -377,7 +377,7 @@ public class PlacilaFragment extends Fragment {
 
         int tocId = (currentRacun.getTocilnicaId() != null && currentRacun.getTocilnicaId() > 0)
                 ? currentRacun.getTocilnicaId()
-                : (Globals.getInstance().getTocilnicaId() != null && Globals.getInstance().getTocilnicaId() > 0 ? Globals.getInstance().getTocilnicaId() : 512200);
+                : (Globals.getInstance().getTocilnicaId() != null && Globals.getInstance().getTocilnicaId() > 0 ? Globals.getInstance().getTocilnicaId() : 0);
         pl.setTocilnicaId(tocId);
 
         if (currentRacun.getRacPozic() != null) {
@@ -387,8 +387,8 @@ public class PlacilaFragment extends Fragment {
         }
         currentRacun.setStatus(1);
         currentRacun.setMarker(activeMarker);
-        currentRacun.setfPosId(prefs.getfPosId() > 0 ? prefs.getfPosId() : (Globals.getInstance().getfPosId() != null && Globals.getInstance().getfPosId() > 0 ? Globals.getInstance().getfPosId() : 500));
-        currentRacun.setfPoslovniProstorId(Globals.getInstance().getfPoslovniProstorId() != null && Globals.getInstance().getfPoslovniProstorId() > 0 ? Globals.getInstance().getfPoslovniProstorId() : 5000);
+        currentRacun.setfPosId(prefs.getfPosId() > 0 ? prefs.getfPosId() : (Globals.getInstance().getfPosId() != null && Globals.getInstance().getfPosId() > 0 ? Globals.getInstance().getfPosId() : 0));
+        currentRacun.setfPoslovniProstorId(Globals.getInstance().getfPoslovniProstorId() != null && Globals.getInstance().getfPoslovniProstorId() > 0 ? Globals.getInstance().getfPoslovniProstorId() : 0);
         currentRacun.setTocilnicaId(tocId);
         if (overrideFiskalizacija != null) {
             currentRacun.setFiskalizacija(overrideFiskalizacija);
@@ -399,7 +399,7 @@ public class PlacilaFragment extends Fragment {
         if (Globals.getInstance().getTekocaOsebaId() > 0) {
             currentRacun.setKasiral(Globals.getInstance().getTekocaOsebaId());
         } else if (currentRacun.getKasiral() == null || currentRacun.getKasiral() <= 0) {
-            currentRacun.setKasiral(9999);
+            currentRacun.setKasiral(Globals.getInstance().getTekocaOsebaId());
         }
         if (currentRacun.getTipRacuna() == null || currentRacun.getTipRacuna() <= 0) {
             currentRacun.setTipRacuna(1);
@@ -929,14 +929,17 @@ public class PlacilaFragment extends Fragment {
             int KKARTICA_KUPECID_ROCNO = g.getkKarticaKupecIdRocno();
 
             int fiksniKupecId = (np != null && np.getKupecId() != null && np.getKupecId() > 0) ? np.getKupecId().intValue() : 0;
+            boolean jeRocnaKarticaTip = (nacplacstoritevid == kKarticaTippartnerRocno) || g.isPlaciloFiksniKupec(placiloId);
             if (fiksniKupecId > 0) {
                 // Splošni fiksni kupec iz NACPLAC.KUPEC_ID
                 g.vpisiKronologijo("Hitro plačilo fiksni kupec NACPLAC.KUPEC_ID: " + fiksniKupecId + " za R:" + (currentRacun != null ? currentRacun.getRacunId() : 0));
                 zakljuciInNatisniHitroPlacilo(placiloId, nacinNaziv, zaplacilo, fiksniKupecId);
-            } else if ((nacplacstoritevid == kKarticaTippartnerRocno) && ((KKARTICA_KUPECID_ROCNO > 0) && (PlaciloPartnerStoritevId == 0))) {
-                // Knjižimo plačilo na KKARTICA_KUPECID_ROCNO
+            } else if (jeRocnaKarticaTip && KKARTICA_KUPECID_ROCNO > 0) {
+                // Knjižimo plačilo na KKARTICA_KUPECID_ROCNO (Delphi FormKasaMobile.pas:10846-10867)
                 g.vpisiKronologijo("Hitro plačilo KK ročno avtomatski KUPEC_ID: " + KKARTICA_KUPECID_ROCNO + " za R:" + (currentRacun != null ? currentRacun.getRacunId() : 0));
-                zakljuciInNatisniHitroPlacilo(placiloId, nacinNaziv, zaplacilo, (KKARTICA_KUPECID_ROCNO > 0 ? KKARTICA_KUPECID_ROCNO : null));
+                zakljuciInNatisniHitroPlacilo(placiloId, nacinNaziv, zaplacilo, KKARTICA_KUPECID_ROCNO);
+            } else if (nacplacstoritevid == kKarticaTippartnerRocno && !g.isKkRocno()) {
+                Toast.makeText(requireContext(), "Ročni vnos kreditne kartice ni dovoljen (KKROCNO=N).", Toast.LENGTH_SHORT).show();
             } else {
                 // Izbor partnerja iz liste za tip partner = STORITEV_ID
                 PartnerVnosDialog.show(requireContext(), zaplacilo, PlaciloPartnerStoritevId, (partnerId, naziv, naslov, davcna, stNarocilnice, rabat) -> {
@@ -990,7 +993,7 @@ public class PlacilaFragment extends Fragment {
 
         int tocId = (currentRacun.getTocilnicaId() != null && currentRacun.getTocilnicaId() > 0)
                 ? currentRacun.getTocilnicaId()
-                : (Globals.getInstance().getTocilnicaId() != null && Globals.getInstance().getTocilnicaId() > 0 ? Globals.getInstance().getTocilnicaId() : 512200);
+                : (Globals.getInstance().getTocilnicaId() != null && Globals.getInstance().getTocilnicaId() > 0 ? Globals.getInstance().getTocilnicaId() : 0);
         pl.setTocilnicaId(tocId);
 
         if (currentRacun.getRacPozic() != null) {
@@ -1016,15 +1019,15 @@ public class PlacilaFragment extends Fragment {
         currentRacun.setFiskalizacija(imaFiskalnoPlacilo ? 1 : null);
         currentRacun.setStatus(2); // ZAKLJUČEN račun
         currentRacun.setMarker(activeMarker);
-        int fPosId = prefs.getfPosId() > 0 ? prefs.getfPosId() : (Globals.getInstance().getfPosId() != null && Globals.getInstance().getfPosId() > 0 ? Globals.getInstance().getfPosId() : 500);
+        int fPosId = prefs.getfPosId() > 0 ? prefs.getfPosId() : (Globals.getInstance().getfPosId() != null && Globals.getInstance().getfPosId() > 0 ? Globals.getInstance().getfPosId() : 0);
         currentRacun.setfPosId(fPosId);
-        int fPoslovniProstorId = Globals.getInstance().getfPoslovniProstorId() != null && Globals.getInstance().getfPoslovniProstorId() > 0 ? Globals.getInstance().getfPoslovniProstorId() : 5000;
+        int fPoslovniProstorId = Globals.getInstance().getfPoslovniProstorId() != null && Globals.getInstance().getfPoslovniProstorId() > 0 ? Globals.getInstance().getfPoslovniProstorId() : 0;
         currentRacun.setfPoslovniProstorId(fPoslovniProstorId);
         currentRacun.setTocilnicaId(tocId);
         if (Globals.getInstance().getTekocaOsebaId() > 0) {
             currentRacun.setKasiral(Globals.getInstance().getTekocaOsebaId());
         } else if (currentRacun.getKasiral() == null || currentRacun.getKasiral() <= 0) {
-            currentRacun.setKasiral(9999);
+            currentRacun.setKasiral(Globals.getInstance().getTekocaOsebaId());
         }
         if (currentRacun.getTipRacuna() == null || currentRacun.getTipRacuna() <= 0) {
             currentRacun.setTipRacuna(1);
@@ -1145,7 +1148,7 @@ public class PlacilaFragment extends Fragment {
 
         int tocId = (currentRacun.getTocilnicaId() != null && currentRacun.getTocilnicaId() > 0)
                 ? currentRacun.getTocilnicaId()
-                : (Globals.getInstance().getTocilnicaId() != null && Globals.getInstance().getTocilnicaId() > 0 ? Globals.getInstance().getTocilnicaId() : 512200);
+                : (Globals.getInstance().getTocilnicaId() != null && Globals.getInstance().getTocilnicaId() > 0 ? Globals.getInstance().getTocilnicaId() : 0);
         pl.setTocilnicaId(tocId);
 
         if (currentRacun.getRacPozic() != null) {
@@ -1161,15 +1164,15 @@ public class PlacilaFragment extends Fragment {
         currentRacun.setStatus(2); // ZAKLJUČEN račun
         currentRacun.setFiskalizacija(null); // Hotel kredit je nefiskalen
         currentRacun.setMarker(activeMarker);
-        int fPosId = prefs.getfPosId() > 0 ? prefs.getfPosId() : (Globals.getInstance().getfPosId() != null && Globals.getInstance().getfPosId() > 0 ? Globals.getInstance().getfPosId() : 500);
+        int fPosId = prefs.getfPosId() > 0 ? prefs.getfPosId() : (Globals.getInstance().getfPosId() != null && Globals.getInstance().getfPosId() > 0 ? Globals.getInstance().getfPosId() : 0);
         currentRacun.setfPosId(fPosId);
-        int fPoslovniProstorId = Globals.getInstance().getfPoslovniProstorId() != null && Globals.getInstance().getfPoslovniProstorId() > 0 ? Globals.getInstance().getfPoslovniProstorId() : 5000;
+        int fPoslovniProstorId = Globals.getInstance().getfPoslovniProstorId() != null && Globals.getInstance().getfPoslovniProstorId() > 0 ? Globals.getInstance().getfPoslovniProstorId() : 0;
         currentRacun.setfPoslovniProstorId(fPoslovniProstorId);
         currentRacun.setTocilnicaId(tocId);
         if (Globals.getInstance().getTekocaOsebaId() > 0) {
             currentRacun.setKasiral(Globals.getInstance().getTekocaOsebaId());
         } else if (currentRacun.getKasiral() == null || currentRacun.getKasiral() <= 0) {
-            currentRacun.setKasiral(9999);
+            currentRacun.setKasiral(Globals.getInstance().getTekocaOsebaId());
         }
 
         BigDecimal trenPlacano = currentRacun.getPlacano() != null ? currentRacun.getPlacano() : BigDecimal.ZERO;
@@ -1255,7 +1258,7 @@ public class PlacilaFragment extends Fragment {
                     pl99.setOriginalObject(null);
                     int tocId = (currentRacun.getTocilnicaId() != null && currentRacun.getTocilnicaId() > 0)
                             ? currentRacun.getTocilnicaId()
-                            : (Globals.getInstance().getTocilnicaId() != null && Globals.getInstance().getTocilnicaId() > 0 ? Globals.getInstance().getTocilnicaId() : 512200);
+                            : (Globals.getInstance().getTocilnicaId() != null && Globals.getInstance().getTocilnicaId() > 0 ? Globals.getInstance().getTocilnicaId() : 0);
                     pl99.setTocilnicaId(tocId);
                     currentRacun.getRacPlaci().add(pl99);
                 }
@@ -1290,7 +1293,7 @@ public class PlacilaFragment extends Fragment {
 
         int tocId = (currentRacun.getTocilnicaId() != null && currentRacun.getTocilnicaId() > 0)
                 ? currentRacun.getTocilnicaId()
-                : (Globals.getInstance().getTocilnicaId() != null && Globals.getInstance().getTocilnicaId() > 0 ? Globals.getInstance().getTocilnicaId() : 512200);
+                : (Globals.getInstance().getTocilnicaId() != null && Globals.getInstance().getTocilnicaId() > 0 ? Globals.getInstance().getTocilnicaId() : 0);
         pl.setTocilnicaId(tocId);
 
         if (currentRacun.getRacPozic() != null) {
@@ -1307,16 +1310,16 @@ public class PlacilaFragment extends Fragment {
         currentRacun.setFiskalizacija(imaFisk ? 1 : null);
         currentRacun.setStatus(2); // ZAKLJUČEN račun
         currentRacun.setMarker(activeMarker);
-        int fPosId = prefs.getfPosId() > 0 ? prefs.getfPosId() : (Globals.getInstance().getfPosId() != null && Globals.getInstance().getfPosId() > 0 ? Globals.getInstance().getfPosId() : 500);
+        int fPosId = prefs.getfPosId() > 0 ? prefs.getfPosId() : (Globals.getInstance().getfPosId() != null && Globals.getInstance().getfPosId() > 0 ? Globals.getInstance().getfPosId() : 0);
         currentRacun.setfPosId(fPosId);
-        int fPoslovniProstorId = Globals.getInstance().getfPoslovniProstorId() != null && Globals.getInstance().getfPoslovniProstorId() > 0 ? Globals.getInstance().getfPoslovniProstorId() : 5000;
+        int fPoslovniProstorId = Globals.getInstance().getfPoslovniProstorId() != null && Globals.getInstance().getfPoslovniProstorId() > 0 ? Globals.getInstance().getfPoslovniProstorId() : 0;
         currentRacun.setfPoslovniProstorId(fPoslovniProstorId);
         currentRacun.setTocilnicaId(tocId);
         if (partnerId > 0) currentRacun.setPartnerId(partnerId);
         if (Globals.getInstance().getTekocaOsebaId() > 0) {
             currentRacun.setKasiral(Globals.getInstance().getTekocaOsebaId());
         } else if (currentRacun.getKasiral() == null || currentRacun.getKasiral() <= 0) {
-            currentRacun.setKasiral(9999);
+            currentRacun.setKasiral(Globals.getInstance().getTekocaOsebaId());
         }
 
         BigDecimal trenPlacano = currentRacun.getPlacano() != null ? currentRacun.getPlacano() : BigDecimal.ZERO;
@@ -1396,14 +1399,17 @@ public class PlacilaFragment extends Fragment {
             int KKARTICA_KUPECID_ROCNO = g.getkKarticaKupecIdRocno();
 
             int fiksniKupecId = (np != null && np.getKupecId() != null && np.getKupecId() > 0) ? np.getKupecId().intValue() : 0;
+            boolean jeRocnaKarticaTip = (nacplacstoritevid == kKarticaTippartnerRocno) || g.isPlaciloFiksniKupec(placiloId);
             if (fiksniKupecId > 0) {
                 // Splošni fiksni kupec iz NACPLAC.KUPEC_ID
                 g.vpisiKronologijo("Hitro plačilo fiksni kupec NACPLAC.KUPEC_ID: " + fiksniKupecId + " za R:" + (currentRacun != null ? currentRacun.getRacunId() : 0));
                 zakljuciInNatisniHitroPlacilo(placiloId, nacinNaziv, zaplacilo, fiksniKupecId);
-            } else if ((nacplacstoritevid == kKarticaTippartnerRocno) && ((KKARTICA_KUPECID_ROCNO > 0) && (PlaciloPartnerStoritevId == 0))) {
-                // Knjižimo partner in kupec preko parametra:
+            } else if (jeRocnaKarticaTip && KKARTICA_KUPECID_ROCNO > 0) {
+                // Knjižimo partner in kupec preko parametra (Delphi FormKasaMobile.pas:10846-10867):
                 g.vpisiKronologijo("Placilo KK ročno avtomatski KUPEC_ID: " + KKARTICA_KUPECID_ROCNO + " za R:" + (currentRacun != null ? currentRacun.getRacunId() : 0));
-                addPlaciloFull(nacinNaziv, placiloId, zaplacilo, null, null, (KKARTICA_KUPECID_ROCNO > 0 ? KKARTICA_KUPECID_ROCNO : null), null, null, null, null, null);
+                addPlaciloFull(nacinNaziv, placiloId, zaplacilo, null, null, KKARTICA_KUPECID_ROCNO, null, null, null, null, null);
+            } else if (nacplacstoritevid == kKarticaTippartnerRocno && !g.isKkRocno()) {
+                Toast.makeText(requireContext(), "Ročni vnos kreditne kartice ni dovoljen (KKROCNO=N).", Toast.LENGTH_SHORT).show();
             } else {
                 // Izbor partnerja iz liste za tip partner = STORITEV_ID
                 showPartnerVnosDialog(placiloId, nacinNaziv, zaplacilo, PlaciloPartnerStoritevId);
@@ -1567,6 +1573,7 @@ public class PlacilaFragment extends Fragment {
             }
         });
 
+        binding.btnOdjava.setVisibility(Globals.getInstance().ispLogout() ? View.VISIBLE : View.INVISIBLE);
         binding.btnOdjava.setOnClickListener(v -> {
             Globals.getInstance().setTekocaOseba(null);
             if (getActivity() instanceof MainActivity) {
@@ -1683,7 +1690,7 @@ public class PlacilaFragment extends Fragment {
                     pl99.setOriginalObject(null);
                     int tocId = (currentRacun.getTocilnicaId() != null && currentRacun.getTocilnicaId() > 0)
                             ? currentRacun.getTocilnicaId()
-                            : (Globals.getInstance().getTocilnicaId() != null ? Globals.getInstance().getTocilnicaId() : 512200);
+                            : (Globals.getInstance().getTocilnicaId() != null ? Globals.getInstance().getTocilnicaId() : 0);
                     pl99.setTocilnicaId(tocId);
                     currentRacun.getRacPlaci().add(pl99);
                 }
@@ -2291,7 +2298,7 @@ public class PlacilaFragment extends Fragment {
 
         int tocId = (currentRacun.getTocilnicaId() != null && currentRacun.getTocilnicaId() > 0)
                 ? currentRacun.getTocilnicaId()
-                : (Globals.getInstance().getTocilnicaId() != null && Globals.getInstance().getTocilnicaId() > 0 ? Globals.getInstance().getTocilnicaId() : 512200);
+                : (Globals.getInstance().getTocilnicaId() != null && Globals.getInstance().getTocilnicaId() > 0 ? Globals.getInstance().getTocilnicaId() : 0);
         pl.setTocilnicaId(tocId);
 
         if (currentRacun.getRacPozic() != null) {
@@ -2301,11 +2308,11 @@ public class PlacilaFragment extends Fragment {
         }
         currentRacun.setStatus(1);
         currentRacun.setMarker(activeMarker);
-        currentRacun.setfPosId(prefs.getfPosId() > 0 ? prefs.getfPosId() : (Globals.getInstance().getfPosId() != null && Globals.getInstance().getfPosId() > 0 ? Globals.getInstance().getfPosId() : 500));
-        currentRacun.setfPoslovniProstorId(Globals.getInstance().getfPoslovniProstorId() != null && Globals.getInstance().getfPoslovniProstorId() > 0 ? Globals.getInstance().getfPoslovniProstorId() : 5000);
+        currentRacun.setfPosId(prefs.getfPosId() > 0 ? prefs.getfPosId() : (Globals.getInstance().getfPosId() != null && Globals.getInstance().getfPosId() > 0 ? Globals.getInstance().getfPosId() : 0));
+        currentRacun.setfPoslovniProstorId(Globals.getInstance().getfPoslovniProstorId() != null && Globals.getInstance().getfPoslovniProstorId() > 0 ? Globals.getInstance().getfPoslovniProstorId() : 0);
         currentRacun.setTocilnicaId(tocId);
         if (currentRacun.getKasiral() == null || currentRacun.getKasiral() <= 0) {
-            currentRacun.setKasiral(9999);
+            currentRacun.setKasiral(Globals.getInstance().getTekocaOsebaId());
         }
         if (currentRacun.getTipRacuna() == null || currentRacun.getTipRacuna() <= 0) {
             currentRacun.setTipRacuna(1);
@@ -2562,8 +2569,8 @@ public class PlacilaFragment extends Fragment {
                 // STATUS = 2 pomeni izpisan / fiskaliziran račun
                 currentRacun.setStatus(2);
                 currentRacun.setMarker(activeMarker);
-                currentRacun.setfPosId(prefs.getfPosId() > 0 ? prefs.getfPosId() : (Globals.getInstance().getfPosId() != null && Globals.getInstance().getfPosId() > 0 ? Globals.getInstance().getfPosId() : 500));
-                currentRacun.setfPoslovniProstorId(Globals.getInstance().getfPoslovniProstorId() != null && Globals.getInstance().getfPoslovniProstorId() > 0 ? Globals.getInstance().getfPoslovniProstorId() : 5000);
+                currentRacun.setfPosId(prefs.getfPosId() > 0 ? prefs.getfPosId() : (Globals.getInstance().getfPosId() != null && Globals.getInstance().getfPosId() > 0 ? Globals.getInstance().getfPosId() : 0));
+                currentRacun.setfPoslovniProstorId(Globals.getInstance().getfPoslovniProstorId() != null && Globals.getInstance().getfPoslovniProstorId() > 0 ? Globals.getInstance().getfPoslovniProstorId() : 0);
                 if (currentRacun.getRacPozic() != null) {
                     for (PozicijaTp p : currentRacun.getRacPozic()) {
                         if (p != null) p.setNeNarocaj(true);
@@ -2987,6 +2994,7 @@ public class PlacilaFragment extends Fragment {
 
             @Override
             public void onSixTapResult(int resultCode, android.content.Intent data) {
+                Globals.getInstance().setSixtapintransaction(false);
                 enableEkran();
                 if (resultCode == android.app.Activity.RESULT_OK && data != null) {
                     SixTapResponse resp = SixTapPaymentService.parseResponseIntent(data);
@@ -3043,12 +3051,8 @@ public class PlacilaFragment extends Fragment {
         pl.setRowDeleted(false);
         pl.setOriginalObject(null);
 
-        // Za kreditno kartico se knjižijo KUPEC_ID, M_REF in NAPITNINA (če > 0, če 0 se ne knjiži)
-        NacPlacTp np = Globals.getInstance().getPlaciloById(placiloId);
-        int kupecId = Globals.getInstance().getKredKarticaKupecId();
-        if (kupecId <= 0 && np != null && np.getKupecId() != null && np.getKupecId() > 0) {
-            kupecId = np.getKupecId().intValue();
-        }
+        // Za kreditno kartico se knjižijo KUPEC_ID (z Diners override), M_REF in NAPITNINA (če > 0, če 0 se ne knjiži)
+        int kupecId = Globals.getInstance().resolvePosKupecId(placiloId, stKartice, slipClient, slipMerchant, appIdentifier);
         if (kupecId > 0) {
             pl.setKupecId(kupecId);
             pl.setPartnerId(kupecId);
@@ -3063,7 +3067,7 @@ public class PlacilaFragment extends Fragment {
 
         int tocId = (currentRacun.getTocilnicaId() != null && currentRacun.getTocilnicaId() > 0)
                 ? currentRacun.getTocilnicaId()
-                : (Globals.getInstance().getTocilnicaId() != null && Globals.getInstance().getTocilnicaId() > 0 ? Globals.getInstance().getTocilnicaId() : 512200);
+                : (Globals.getInstance().getTocilnicaId() != null && Globals.getInstance().getTocilnicaId() > 0 ? Globals.getInstance().getTocilnicaId() : 0);
         pl.setTocilnicaId(tocId);
 
         if (currentRacun.getRacPozic() != null) {
@@ -3073,13 +3077,13 @@ public class PlacilaFragment extends Fragment {
         }
         currentRacun.setStatus(1);
         currentRacun.setMarker(activeMarker);
-        currentRacun.setfPosId(prefs.getfPosId() > 0 ? prefs.getfPosId() : (Globals.getInstance().getfPosId() != null && Globals.getInstance().getfPosId() > 0 ? Globals.getInstance().getfPosId() : 500));
-        currentRacun.setfPoslovniProstorId(Globals.getInstance().getfPoslovniProstorId() != null && Globals.getInstance().getfPoslovniProstorId() > 0 ? Globals.getInstance().getfPoslovniProstorId() : 5000);
+        currentRacun.setfPosId(prefs.getfPosId() > 0 ? prefs.getfPosId() : (Globals.getInstance().getfPosId() != null && Globals.getInstance().getfPosId() > 0 ? Globals.getInstance().getfPosId() : 0));
+        currentRacun.setfPoslovniProstorId(Globals.getInstance().getfPoslovniProstorId() != null && Globals.getInstance().getfPoslovniProstorId() > 0 ? Globals.getInstance().getfPoslovniProstorId() : 0);
         currentRacun.setTocilnicaId(tocId);
         if (Globals.getInstance().getTekocaOsebaId() > 0) {
             currentRacun.setKasiral(Globals.getInstance().getTekocaOsebaId());
         } else if (currentRacun.getKasiral() == null || currentRacun.getKasiral() <= 0) {
-            currentRacun.setKasiral(9999);
+            currentRacun.setKasiral(Globals.getInstance().getTekocaOsebaId());
         }
         if (currentRacun.getTipRacuna() == null || currentRacun.getTipRacuna() <= 0) {
             currentRacun.setTipRacuna(1);
@@ -3235,7 +3239,7 @@ public class PlacilaFragment extends Fragment {
         binding.btnNavNaroci.setEnabled(false);
         binding.btnOdjava.setEnabled(false);
         if (msg != null && !msg.isEmpty() && getContext() != null) {
-            Toast.makeText(requireContext(), msg, Toast.LENGTH_SHORT).show();
+            // [DEBUG-TOAST] Toast.makeText(requireContext(), msg, Toast.LENGTH_SHORT).show();
         }
     }
 

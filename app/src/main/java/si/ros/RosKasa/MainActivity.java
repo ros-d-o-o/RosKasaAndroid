@@ -346,7 +346,7 @@ public class MainActivity extends AppCompatActivity {
 
                                 @Override
                                 public void onSixTapResult(int resultCode, android.content.Intent data) {
-                                    handleStartupSixTapResult(resultCode, data);
+                                    handleStartupSixTapResult(resultCode, data, zadnjiSixRacunId);
                                 }
                             });
                         });
@@ -365,18 +365,31 @@ public class MainActivity extends AppCompatActivity {
     }
 
     private void handleStartupSixTapResult(int resultCode, android.content.Intent data) {
+        handleStartupSixTapResult(resultCode, data, Globals.getInstance().getZadnjiSixRacunId());
+    }
+
+    private void handleStartupSixTapResult(int resultCode, android.content.Intent data, int expectedRacunId) {
+        Globals.getInstance().setSixtapintransaction(false);
         if (resultCode == RESULT_OK && data != null) {
             si.ros.RosKasa.payment.models.SixTapResponse resp = si.ros.RosKasa.payment.SixTapPaymentService.parseResponseIntent(data);
-            if (resp.isSuccess() && resp.getpRacunId() > 0) {
+            if (resp.getpRacunId() <= 0 && expectedRacunId > 0) {
+                resp.setpRacunId(expectedRacunId);
+            }
+            if (resp.getpOperacija() == null || resp.getpOperacija().isEmpty()) {
+                resp.setpOperacija(si.ros.RosKasa.payment.SixTapPaymentService.OP_LAST_TRANSACTION);
+            }
+            boolean hasRef = resp.getPaymentSolutionReference() != null && !resp.getPaymentSolutionReference().isEmpty();
+            if (resp.isSuccess() && hasRef && resp.getpRacunId() > 0) {
                 android.util.Log.i("MainActivity", "LAST_TRANSACTION ob okrevanju uspel za R:" + resp.getpRacunId());
                 Globals.getInstance().vpisiKronologijo("SIXTAP LAST_TRANSACTION USPEH R:" + resp.getpRacunId() + " M_REF:" + resp.getPaymentSolutionReference());
+                si.ros.RosKasa.payment.PaymentRecoveryManager.saveConfirmedPOSTransaction(this, resp, si.ros.RosKasa.payment.PaymentRecoveryManager.POS_STATE_POS_CONFIRMED);
                 bookConfirmedPOSTransaction(resp);
             } else {
-                Globals.getInstance().vpisiKronologijo("SIXTAP LAST_TRANSACTION NEUSPEH R:" + (resp != null ? resp.getpRacunId() : 0));
+                Globals.getInstance().vpisiKronologijo("SIXTAP LAST_TRANSACTION NEUSPEH R:" + (resp.getpRacunId() > 0 ? resp.getpRacunId() : expectedRacunId));
                 si.ros.RosKasa.payment.PaymentRecoveryManager.clearAllRecoveryData(this);
             }
         } else {
-            Globals.getInstance().vpisiKronologijo("SIXTAP LAST_TRANSACTION PREKLICAN");
+            Globals.getInstance().vpisiKronologijo("SIXTAP LAST_TRANSACTION PREKLICAN R:" + expectedRacunId);
             si.ros.RosKasa.payment.PaymentRecoveryManager.clearAllRecoveryData(this);
         }
     }
@@ -417,6 +430,11 @@ public class MainActivity extends AppCompatActivity {
                         pl.setDelniZnesek(znesekRacuna);
                         pl.setZnesek(BigDecimal.ZERO);
                         pl.setPozicijaId(-1);
+                        int kupecId = Globals.getInstance().resolvePosKupecId(placiloId, resp.getCardnumber(), resp.getClient(), resp.getMerchant(), resp.getApplicationIdentifier());
+                        if (kupecId > 0) {
+                            pl.setKupecId(kupecId);
+                            pl.setPartnerId(kupecId);
+                        }
                         pl.setStKartice(resp.getCardnumber());
                         pl.setMRef(resp.getPaymentSolutionReference());
                         pl.setWpiSessionId(resp.getpWpiSessionId());

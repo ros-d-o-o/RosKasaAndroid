@@ -138,8 +138,8 @@ public class RacunPrintBuilder {
                 || (racun.getfPodpis() != null && !racun.getfPodpis().trim().isEmpty());
         String docTitle;
         if (isFiskal) {
-            int pId = (racun.getfPoslovniProstorId() != null && racun.getfPoslovniProstorId() > 0) ? racun.getfPoslovniProstorId() : 5000;
-            int bId = (racun.getfPosId() != null && racun.getfPosId() > 0) ? racun.getfPosId() : 500;
+            int pId = (racun.getfPoslovniProstorId() != null && racun.getfPoslovniProstorId() > 0) ? racun.getfPoslovniProstorId() : 0;
+            int bId = (racun.getfPosId() != null && racun.getfPosId() > 0) ? racun.getfPosId() : 0;
             int sId = (racun.getfStevilkaRacuna() != null && racun.getfStevilkaRacuna() > 0) ? racun.getfStevilkaRacuna() : racun.getRacunId();
             docTitle = "Račun številka " + pId + "-" + bId + "-" + sId;
         } else {
