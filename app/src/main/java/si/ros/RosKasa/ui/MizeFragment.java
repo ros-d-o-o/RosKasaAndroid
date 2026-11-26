@@ -95,12 +95,71 @@ public class MizeFragment extends Fragment {
         });
 
         binding.btnMarker.setOnClickListener(v -> odpriNovMarkerNarocilo());
+        binding.btnInfo.setOnClickListener(v -> prikaziInfoDialog());
 
         updateNatakarInfo();
         setupRajoniBar();
         setupMizeGrid();
         // Takoj izriši znane mize iz predpomnilnika, nato onResume osveži zasednost s strežnika (brez dvojnega SOAP klica)
         populateMizeGrid(lastLoadedOpenAccounts);
+    }
+
+    private void prikaziInfoDialog() {
+        Globals g = Globals.getInstance();
+        OsebaTp oseba = g.getTekocaOseba();
+
+        String osebaTekst = (oseba != null)
+                ? oseba.getOsebaId() + " - " + (oseba.getNaziv() != null ? oseba.getNaziv() : "")
+                : "(ni prijavljene osebe)";
+
+        int strmId = (g.getTekociStrm() != null && g.getTekociStrm() > 0)
+                ? g.getTekociStrm()
+                : ((g.getTocilnicaId() != null && g.getTocilnicaId() > 0) ? g.getTocilnicaId() : g.getHisObrat());
+        String strmNaziv = g.getNazivProdajnegaMesta() != null && !g.getNazivProdajnegaMesta().trim().isEmpty()
+                ? g.getNazivProdajnegaMesta().trim()
+                : (g.getNazivObratPE() != null ? g.getNazivObratPE().trim() : "");
+        String strmTekst = strmId > 0
+                ? (strmNaziv.isEmpty() ? String.valueOf(strmId) : strmId + " (" + strmNaziv + ")")
+                : "-";
+
+        java.util.Set<Integer> cenikIds = new java.util.TreeSet<>();
+        for (CenikListAdapter.CenikItem ci : g.getCachedCenik()) {
+            if (ci != null && ci.cenikId > 0) {
+                cenikIds.add(ci.cenikId);
+            }
+        }
+        String cenikIdTekst;
+        if (cenikIds.isEmpty()) {
+            cenikIdTekst = g.hasCachedCenik() ? "naložen (brez ID)" : "ni naložen";
+        } else {
+            StringBuilder sbC = new StringBuilder();
+            for (Integer id : cenikIds) {
+                if (sbC.length() > 0) sbC.append(", ");
+                sbC.append(id);
+            }
+            cenikIdTekst = sbC.toString();
+        }
+
+        String mobileNaziv = (g.getNazivMobile() != null && !g.getNazivMobile().trim().isEmpty())
+                ? " (" + g.getNazivMobile().trim() + ")"
+                : "";
+        int pendingKron = si.ros.RosKasa.cache.KronologijaQueueManager.getPendingCount(requireContext());
+
+        StringBuilder msg = new StringBuilder();
+        msg.append("Mobile ID: ").append(g.getMobileId()).append(mobileNaziv).append("\n");
+        msg.append("Prijavljen: ").append(osebaTekst).append("\n");
+        msg.append("Stroškovno mesto: ").append(strmTekst).append("\n");
+        msg.append("Cenik ID: ").append(cenikIdTekst).append("\n");
+        msg.append("APK verzija: ").append(g.getAppVersionInfo()).append("\n");
+        msg.append("F_POS_ID: ").append(g.getfPosId() != null ? g.getfPosId() : prefs.getfPosId())
+           .append("  |  TIPKE_POS_ID: ").append(g.getTipkePosId()).append("\n");
+        msg.append("Kronologija v čakanju: ").append(pendingKron);
+
+        new androidx.appcompat.app.AlertDialog.Builder(requireContext())
+                .setTitle("Informacije o blagajni")
+                .setMessage(msg.toString())
+                .setPositiveButton("Zapri", null)
+                .show();
     }
 
     private void updateNatakarInfo() {
@@ -209,7 +268,8 @@ public class MizeFragment extends Fragment {
             }
         });
 
-        binding.rvMizeGrid.setLayoutManager(new GridLayoutManager(requireContext(), 4));
+        int spanCount = DeviceLayoutHelper.getMizeSpanCount(requireContext());
+        binding.rvMizeGrid.setLayoutManager(new GridLayoutManager(requireContext(), spanCount));
         binding.rvMizeGrid.setAdapter(mizeAdapter);
     }
 
@@ -252,7 +312,7 @@ public class MizeFragment extends Fragment {
                 int pOseba = vidiVsaOdprta ? 0 : g.getTekocaOsebaId();
                 int strmId = (g.getTocilnicaId() != null && g.getTocilnicaId() > 0)
                         ? g.getTocilnicaId() : prefs.getTocilnicaId();
-                List<RacunSeznamItem> openAccounts = RosKasaSoapClient.getRacuniSeznam(
+                List<RacunSeznamItem> openAccounts = RosKasaSoapClient.getRacuniForMize(
                         prefs.getServerUrl(),
                         prefs.getToken(),
                         prefs.getMobileId(),
@@ -288,17 +348,22 @@ public class MizeFragment extends Fragment {
 
     private boolean isRacunPlacan(RacunSeznamItem acc) {
         if (acc == null) return false;
-        if (acc.isPlacan()) return true;
+        if (acc.isPlacan() || acc.hasAnyPayment()) return true;
         Globals g = Globals.getInstance();
-        if (g.isRacunPlacan(acc.getRacunId(), acc.getZnesek())) {
+        BigDecimal cachedPl = g.getRacunPlacano(acc.getRacunId());
+        if (cachedPl != null && cachedPl.compareTo(BigDecimal.ZERO) > 0) {
             return true;
         }
         RacunTp cur = g.getCurrentRacun();
         if (cur != null && cur.getRacunId() == acc.getRacunId()) {
             if (cur.getPlacano() != null && cur.getPlacano().compareTo(BigDecimal.ZERO) > 0) {
-                if (cur.getZnesek() == null || cur.getZnesek().compareTo(BigDecimal.ZERO) <= 0
-                        || cur.getPlacano().compareTo(cur.getZnesek()) >= 0) {
-                    return true;
+                return true;
+            }
+            if (cur.getRacPlaci() != null) {
+                for (si.ros.RosKasa.models.PlaciloTp pl : cur.getRacPlaci()) {
+                    if (pl != null && !pl.isRowDeleted() && pl.getPlaciloId() > 0 && pl.getPlaciloId() != 99) {
+                        return true;
+                    }
                 }
             }
         }

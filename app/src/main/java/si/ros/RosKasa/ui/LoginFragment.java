@@ -67,8 +67,11 @@ public class LoginFragment extends Fragment {
 
         if (prefs.isRegistered()) {
             // getAppConfig vedno svež ob zagonu (skladno z Delphi SetupIzWeba(True) + CheckPovezava)
+            final android.content.Context appCtx = requireContext().getApplicationContext();
             if (!Globals.isNetworkAvailable(requireContext())) {
                 Toast.makeText(requireContext(), "Opozorilo: Ni internetne povezave! Uporabljeni bodo lokalni podatki.", Toast.LENGTH_LONG).show();
+                // Tudi brez povezave poskusi prednaložiti lokalno shranjene šifrante
+                executor.execute(() -> si.ros.RosKasa.cache.LocalCacheManager.loadLargeSifrantiIfValid(appCtx));
             } else {
                 executor.execute(() -> {
                     try {
@@ -76,12 +79,18 @@ public class LoginFragment extends Fragment {
                         try { mId = Integer.parseInt(prefs.getMobileId()); } catch (Exception ignored) {}
                         MobileSetupTp setup = RosKasaSoapClient.getAppConfig(prefs.getServerUrl(), prefs.getToken(), mId);
                         prefs.saveMobileSetup(setup);
+                        String sifrantiSource = ensureLargeSifrantiLoaded(appCtx, mId);
+                        Globals.getInstance().logStartupCompletedIfPending(sifrantiSource);
+                        Globals.getInstance().posljiOfflineKronologijo();
                         mainHandler.post(() -> {
                             if (isAdded() && binding != null) {
                                 updateUiMode();
                             }
                         });
-                    } catch (Exception ignored) {}
+                    } catch (Exception e) {
+                        Log.w("LoginFragment", "Napaka pri zagonu getAppConfig/šifranti: " + e.getMessage());
+                        Globals.getInstance().vpisiKronologijo("Napaka pri zagonu RosKasa v" + Globals.getInstance().getAppVersionInfo() + ": " + e.getMessage());
+                    }
                 });
             }
         }
@@ -116,6 +125,10 @@ public class LoginFragment extends Fragment {
 
         binding.btnResetConfig.setOnClickListener(v -> {
             prefs.clearAll();
+            binding.etServerUrl.setText("");
+            binding.etMobileId.setText("");
+            binding.etUsername.setText("");
+            binding.etPassword.setText("");
             updateUiMode();
             Toast.makeText(requireContext(), "Nastavitve ponastavljene", Toast.LENGTH_SHORT).show();
         });
@@ -149,8 +162,11 @@ public class LoginFragment extends Fragment {
             binding.containerFirstRun.setVisibility(View.VISIBLE);
             binding.containerRegularLogin.setVisibility(View.GONE);
             if (binding.etServerUrl.getText().toString().trim().isEmpty()) {
-                String savedUrl = prefs.getServerUrl();
-                binding.etServerUrl.setText(savedUrl != null && !savedUrl.isEmpty() ? savedUrl : "https://web.ros.si/ora/r16f/asmx/kasa.asmx");
+                if (prefs.hasSavedUrl()) {
+                    binding.etServerUrl.setText(prefs.getServerUrl());
+                } else {
+                    binding.etServerUrl.setText("");
+                }
             }
         }
     }
@@ -225,6 +241,9 @@ public class LoginFragment extends Fragment {
                     try {
                         MobileSetupTp setup = RosKasaSoapClient.getAppConfig(url, result.getToken(), mId);
                         prefs.saveMobileSetup(setup);
+                        android.content.Context appCtx = getContext() != null ? getContext().getApplicationContext() : Globals.getInstance().getAppContext();
+                        String sifrantiSource = ensureLargeSifrantiLoaded(appCtx, mId);
+                        Globals.getInstance().logStartupCompletedIfPending(sifrantiSource);
                     } catch (Exception setupEx) {
                         // Ignoriramo napako pri pridobivanju setupa (uporabi se fallback)
                     }
@@ -395,70 +414,9 @@ public class LoginFragment extends Fragment {
                         }
                     }
 
-                    // Poskusi naložiti 6 velikih šifrantov iz disk JSON cache (CenikLokalno + CenikStDniObnova)
-                    boolean loadedFromDiskCache = si.ros.RosKasa.cache.LocalCacheManager.loadLargeSifrantiIfValid(appCtx);
-                    if (!loadedFromDiskCache && Globals.isNetworkAvailable(appCtx)) {
-                        // 1. Plačilne metode (getNacPlac2)
-                        try {
-                            List<NacPlacTp> placila = RosKasaSoapClient.getNacPlac2(prefs.getServerUrl(), prefs.getToken(), mId);
-                            Globals.getInstance().filterAndSetCachedPlacila(placila);
-                        } catch (Exception ex) {
-                            Log.w("LoginFragment", "Napaka pri nalaganju plačil: " + ex.getMessage());
-                        }
-
-                        // 2. Cenik (+ CenikVrVr + CenikVrCene)
-                        int strmId = (g.getTocilnicaId() != null && g.getTocilnicaId() > 0)
-                                ? g.getTocilnicaId()
-                                : (prefs.getTocilnicaId() > 0 ? prefs.getTocilnicaId() : prefs.getHisObrat());
-                        try {
-                            List<CenikListAdapter.CenikItem> cenik = RosKasaSoapClient.getCenik(prefs.getServerUrl(), prefs.getToken(), strmId);
-                            if (cenik != null && !cenik.isEmpty()) {
-                                Globals.getInstance().setCachedCenik(cenik);
-                            }
-                        } catch (Exception ex) {
-                            Log.w("LoginFragment", "Napaka pri prednalaganju cenika: " + ex.getMessage());
-                        }
-
-                        // 3. Hitre tipke
-                        int tipkePosId = prefs.getTipkePosId();
-                        if (tipkePosId > 0) {
-                            try {
-                                List<HitraTipkaTp> tipke = RosKasaSoapClient.getHitreTipke(prefs.getServerUrl(), prefs.getToken(), tipkePosId);
-                                if (tipke != null && !tipke.isEmpty()) {
-                                    Globals.getInstance().setCachedHitreTipke(tipke);
-                                }
-                            } catch (Exception ex) {
-                                Log.w("LoginFragment", "Napaka pri prednalaganju hitrih tipk: " + ex.getMessage());
-                            }
-                        }
-
-                        // 4. Dodatki
-                        try {
-                            RosKasaSoapClient.getDodatki(prefs.getServerUrl(), prefs.getToken());
-                        } catch (Exception ignored) {}
-
-                        // 5. Storno razlogi
-                        try {
-                            List<si.ros.RosKasa.models.StornoRazlogTp> sr = RosKasaSoapClient.getStornoRazlogi(prefs.getServerUrl(), prefs.getToken());
-                            if (sr != null && !sr.isEmpty()) Globals.getInstance().setCachedStornoRazlogi(sr);
-                        } catch (Exception ignored) {}
-
-                        // 6. Lojalnostni popusti
-                        if (Globals.getInstance().ispLojalnostPopust()) {
-                            try {
-                                List<LojalnostnaTp> loj = RosKasaSoapClient.getLojalnostna(prefs.getServerUrl(), prefs.getToken());
-                                if (loj != null && !loj.isEmpty()) {
-                                    Globals.getInstance().setCachedLojalnostna(loj);
-                                }
-                            } catch (Exception ex) {
-                                Log.w("LoginFragment", "Napaka pri prednalaganju lojalnostnih popustov: " + ex.getMessage());
-                            }
-                        }
-
-                        if (g.isCenikLokalno()) {
-                            si.ros.RosKasa.cache.LocalCacheManager.saveLargeSifranti(appCtx);
-                        }
-                    }
+                    // Poskusi naložiti 6 velikih šifrantov iz pomnilnika, disk JSON cache (CenikLokalno + CenikStDniObnova) ali SOAP
+                    String sifrantiSource = ensureLargeSifrantiLoaded(appCtx, mId);
+                    g.logStartupCompletedIfPending(sifrantiSource);
                 } catch (Exception ignored) {}
             });
         }
@@ -467,6 +425,87 @@ public class LoginFragment extends Fragment {
             MainActivity mainAct = (MainActivity) getActivity();
             mainAct.navigateToFragment(new MizeFragment());
         }
+    }
+
+    /**
+     * Naloži 6 velikih šifrantov (NacPlac, Cenik+CenikVrVr+CenikVrCene, HitreTipke, Dodatki, StornoRazlogi, Lojalnostna).
+     * Upošteva parameter CENIKLOKALNO='D' in CENIKSTDNIOBNOVA za hiter zagon iz lokalnega JSON predpomnilnika.
+     */
+    private String ensureLargeSifrantiLoaded(android.content.Context appCtx, int mId) {
+        Globals g = Globals.getInstance();
+        if (g.hasCachedCenik() && g.hasCachedHitreTipke() && g.hasCachedPlacila()) {
+            return "MEMORY";
+        }
+
+        if (si.ros.RosKasa.cache.LocalCacheManager.loadLargeSifrantiIfValid(appCtx)) {
+            return "CACHE";
+        }
+
+        if (appCtx != null && !Globals.isNetworkAvailable(appCtx)) {
+            return "OFFLINE";
+        }
+
+        // 1. Plačilne metode (getNacPlac2)
+        try {
+            List<NacPlacTp> placila = RosKasaSoapClient.getNacPlac2(prefs.getServerUrl(), prefs.getToken(), mId);
+            g.filterAndSetCachedPlacila(placila);
+        } catch (Exception ex) {
+            Log.w("LoginFragment", "Napaka pri nalaganju plačil: " + ex.getMessage());
+        }
+
+        // 2. Cenik (+ CenikVrVr + CenikVrCene)
+        int strmId = (g.getTocilnicaId() != null && g.getTocilnicaId() > 0)
+                ? g.getTocilnicaId()
+                : (prefs.getTocilnicaId() > 0 ? prefs.getTocilnicaId() : prefs.getHisObrat());
+        try {
+            List<CenikListAdapter.CenikItem> cenik = RosKasaSoapClient.getCenik(prefs.getServerUrl(), prefs.getToken(), strmId);
+            if (cenik != null && !cenik.isEmpty()) {
+                g.setCachedCenik(cenik);
+            }
+        } catch (Exception ex) {
+            Log.w("LoginFragment", "Napaka pri prednalaganju cenika: " + ex.getMessage());
+        }
+
+        // 3. Hitre tipke
+        int tipkePosId = prefs.getTipkePosId();
+        if (tipkePosId > 0) {
+            try {
+                List<HitraTipkaTp> tipke = RosKasaSoapClient.getHitreTipke(prefs.getServerUrl(), prefs.getToken(), tipkePosId);
+                if (tipke != null && !tipke.isEmpty()) {
+                    g.setCachedHitreTipke(tipke);
+                }
+            } catch (Exception ex) {
+                Log.w("LoginFragment", "Napaka pri prednalaganju hitrih tipk: " + ex.getMessage());
+            }
+        }
+
+        // 4. Dodatki
+        try {
+            RosKasaSoapClient.getDodatki(prefs.getServerUrl(), prefs.getToken());
+        } catch (Exception ignored) {}
+
+        // 5. Storno razlogi
+        try {
+            List<si.ros.RosKasa.models.StornoRazlogTp> sr = RosKasaSoapClient.getStornoRazlogi(prefs.getServerUrl(), prefs.getToken());
+            if (sr != null && !sr.isEmpty()) g.setCachedStornoRazlogi(sr);
+        } catch (Exception ignored) {}
+
+        // 6. Lojalnostni popusti
+        if (g.ispLojalnostPopust()) {
+            try {
+                List<LojalnostnaTp> loj = RosKasaSoapClient.getLojalnostna(prefs.getServerUrl(), prefs.getToken());
+                if (loj != null && !loj.isEmpty()) {
+                    g.setCachedLojalnostna(loj);
+                }
+            } catch (Exception ex) {
+                Log.w("LoginFragment", "Napaka pri prednalaganju lojalnostnih popustov: " + ex.getMessage());
+            }
+        }
+
+        if (g.isCenikLokalno() && appCtx != null) {
+            si.ros.RosKasa.cache.LocalCacheManager.saveLargeSifranti(appCtx);
+        }
+        return "WS";
     }
 
     @Override

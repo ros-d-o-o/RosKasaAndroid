@@ -462,6 +462,144 @@ public class Globals {
     private Context appContext;
     private boolean logirajAktivnost = true;
 
+    // Merjenje zagona aplikacije in verzija APK za kronologijo
+    private long appStartTimeMs = 0L;
+    private String appStartDatumUra = "";
+    private String appStartTimeFormatted = "";
+    private String appVersionInfo = "";
+    private boolean startupKronologijaLogged = false;
+
+    public synchronized void markAppStartupBegin(Context context) {
+        if (this.appStartTimeMs > 0L) {
+            return; // Merimo samo ob prvem zagonu procesa, ne ob rotaciji / ponovnem kreiranju Activity
+        }
+        Date now = new Date();
+        this.appStartTimeMs = now.getTime();
+        this.appStartDatumUra = new SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss", Locale.getDefault()).format(now);
+        this.appStartTimeFormatted = new SimpleDateFormat("HH:mm:ss.SSS", Locale.US).format(now);
+        this.startupKronologijaLogged = false;
+        this.appVersionInfo = resolveAppVersionInfo(context != null ? context : this.appContext);
+    }
+
+    private static String resolveAppVersionInfo(Context context) {
+        if (context == null) return "unknown";
+        try {
+            android.content.pm.PackageInfo pInfo = context.getPackageManager().getPackageInfo(context.getPackageName(), 0);
+            String vName = pInfo.versionName != null ? pInfo.versionName : "";
+            long vCode;
+            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.P) {
+                vCode = pInfo.getLongVersionCode();
+            } else {
+                vCode = pInfo.versionCode;
+            }
+            return vName + " (" + vCode + ")";
+        } catch (Exception e) {
+            return "unknown";
+        }
+    }
+
+    public String getAppVersionInfo() {
+        if (this.appVersionInfo == null || this.appVersionInfo.isEmpty()) {
+            this.appVersionInfo = resolveAppVersionInfo(this.appContext);
+        }
+        return this.appVersionInfo;
+    }
+
+    public synchronized boolean isStartupKronologijaLogged() {
+        return this.startupKronologijaLogged;
+    }
+
+    /**
+     * Ko je zagon končan in smo povezani na web service, v kronologijo zapiše:
+     * 1) START aplikacije (z dejanskim časom začetka zagona in verzijo APK)
+     * 2) ZAGON KONČAN (s trajanjem zagona, verzijo APK in načinom nalaganja šifrantov)
+     */
+    public synchronized void logStartupCompletedIfPending(String sifrantiSource) {
+        if (this.startupKronologijaLogged) return;
+        if (this.kronologIzklop || !this.logirajAktivnost) return;
+        if (this.serverUrl == null || this.serverUrl.trim().isEmpty() || this.token == null || this.token.trim().isEmpty()) {
+            return;
+        }
+        if (this.appStartTimeMs <= 0L) {
+            markAppStartupBegin(this.appContext);
+        }
+
+        this.startupKronologijaLogged = true;
+        long elapsedMs = Math.max(0L, System.currentTimeMillis() - this.appStartTimeMs);
+        String ver = getAppVersionInfo();
+        String src = (sifrantiSource != null && !sifrantiSource.isEmpty()) ? sifrantiSource : "WS";
+
+        vpisiKronologijoSCasom(
+                this.serverUrl,
+                this.token,
+                String.valueOf(this.mobileId),
+                "START aplikacije RosKasa v" + ver,
+                this.tekocaOsebaId,
+                this.tocilnicaId,
+                this.appStartDatumUra,
+                this.appStartTimeFormatted
+        );
+
+        vpisiKronologijo(
+                "ZAGON KONCAN RosKasa v" + ver
+                        + " trajanje=" + elapsedMs + "ms"
+                        + " (CENIKLOKALNO=" + (this.cenikLokalno ? "D" : "N")
+                        + ", sifranti=" + src + ")"
+        );
+    }
+
+    public void vpisiKronologijoSCasom(String serverUrl, String token, String mobileId, String opisOperacije,
+                                       Integer osebaId, Integer obratId, String customDatumUra, String customTimeStr) {
+        if (this.kronologIzklop) return;
+        if (!this.logirajAktivnost) return;
+
+        String sUrl = (serverUrl != null && !serverUrl.isEmpty()) ? serverUrl : this.serverUrl;
+        String tok = (token != null && !token.isEmpty()) ? token : this.token;
+        String mob = (mobileId != null && !mobileId.isEmpty()) ? mobileId : String.valueOf(this.mobileId);
+        int osId = (osebaId != null && osebaId != 0) ? osebaId : this.tekocaOsebaId;
+        int obId = (obratId != null && obratId != 0) ? obratId : (this.tocilnicaId != null && this.tocilnicaId != 0 ? this.tocilnicaId : this.hisObrat);
+
+        String finalOpis = opisOperacije != null ? opisOperacije : "";
+        if (!finalOpis.startsWith("MAID:")) {
+            finalOpis = finalOpis.replace("RACUN_ID=", "R:");
+            String trimmed = finalOpis.length() > 900 ? finalOpis.substring(0, 900) : finalOpis;
+            String timeStr = (customTimeStr != null && !customTimeStr.isEmpty())
+                    ? customTimeStr
+                    : new SimpleDateFormat("HH:mm:ss.SSS", Locale.US).format(new Date());
+            finalOpis = "MAID:" + mob + " " + trimmed + " RosKasa/" + timeStr;
+        }
+
+        String datumUra = (customDatumUra != null && !customDatumUra.trim().isEmpty())
+                ? customDatumUra.trim()
+                : new SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss", Locale.getDefault()).format(new Date());
+
+        if (this.appContext != null) {
+            si.ros.RosKasa.cache.KronologijaQueueManager.enqueue(
+                    this.appContext,
+                    datumUra,
+                    finalOpis,
+                    osId,
+                    obId,
+                    mob
+            );
+            si.ros.RosKasa.cache.KronologijaQueueManager.flushAsync(
+                    this.appContext,
+                    sUrl != null ? sUrl : "",
+                    tok != null ? tok : ""
+            );
+        } else {
+            si.ros.RosKasa.soap.RosKasaSoapClient.vpisKronologijeAsyncDirect(
+                    sUrl != null ? sUrl : "",
+                    tok != null ? tok : "",
+                    mob,
+                    finalOpis,
+                    osId,
+                    obId,
+                    datumUra
+            );
+        }
+    }
+
     public void initContext(Context context) {
         if (context != null) {
             this.appContext = context.getApplicationContext();
@@ -508,76 +646,20 @@ public class Globals {
     }
 
     /**
-     * Ponovno pošiljanje lokalno shranjene offline kronologije (kronologija.log) na strežnik ob prijavi/izhodu.
+     * Ponovno pošiljanje lokalno shranjene offline kronologije (kronologija_pending.json) na strežnik.
+     * Zapisi se z diska brišejo šele po potrjenem prenosu na strežnik.
      */
     public void posljiOfflineKronologijo() {
         if (this.kronologIzklop || !this.logirajAktivnost) return;
-        if (this.appContext == null || !isNetworkAvailable(this.appContext)) return;
-        if (this.serverUrl == null || this.serverUrl.isEmpty() || this.token == null || this.token.isEmpty()) return;
-
-        final File logFile = new File(this.appContext.getFilesDir(), "kronologija.log");
-        if (!logFile.exists() || logFile.length() == 0) return;
-
-        final String sUrl = this.serverUrl;
-        final String tok = this.token;
-        final String mob = String.valueOf(this.mobileId);
-        final int osId = this.tekocaOsebaId != 0 ? this.tekocaOsebaId : 9999;
-        final int obId = this.tocilnicaId != 0 ? this.tocilnicaId : (this.hisObrat != 0 ? this.hisObrat : 512200);
-
-        new Thread(() -> {
-            List<String> lines = new ArrayList<>();
-            synchronized (Globals.this) {
-                if (!logFile.exists()) return;
-                try (java.io.BufferedReader br = new java.io.BufferedReader(new java.io.FileReader(logFile))) {
-                    String line;
-                    while ((line = br.readLine()) != null) {
-                        if (!line.trim().isEmpty()) {
-                            lines.add(line.trim());
-                        }
-                    }
-                    logFile.delete();
-                } catch (Exception ignored) {}
-            }
-            // Pošlji največ zadnjih 50 zapisov, da ne preobremenimo strežnika
-            int start = Math.max(0, lines.size() - 50);
-            for (int i = start; i < lines.size(); i++) {
-                si.ros.RosKasa.soap.RosKasaSoapClient.vpisKronologijeAsyncDirect(sUrl, tok, mob, lines.get(i), osId, obId);
-            }
-        }).start();
+        if (this.appContext == null) return;
+        si.ros.RosKasa.cache.KronologijaQueueManager.flushAsync(this.appContext, this.serverUrl, this.token);
     }
 
     /**
-     * Vpisi operacijo ali napako v kronologijo
+     * Vpisi operacijo ali napako v kronologijo (najprej shrani v lokalno čakalno vrsto, nato prenese na strežnik).
      */
     public void vpisiKronologijo(String serverUrl, String token, String mobileId, String opisOperacije, Integer osebaId, Integer obratId) {
-        if (this.kronologIzklop) return;
-        if (!this.logirajAktivnost) return;
-
-        String sUrl = (serverUrl != null && !serverUrl.isEmpty()) ? serverUrl : this.serverUrl;
-        String tok = (token != null && !token.isEmpty()) ? token : this.token;
-        String mob = (mobileId != null && !mobileId.isEmpty()) ? mobileId : String.valueOf(this.mobileId);
-        int osId = (osebaId != null && osebaId != 0) ? osebaId : this.tekocaOsebaId;
-        int obId = (obratId != null && obratId != 0) ? obratId : (this.tocilnicaId != 0 ? this.tocilnicaId : this.hisObrat);
-
-        String finalOpis = opisOperacije != null ? opisOperacije : "";
-        if (!finalOpis.startsWith("MAID:")) {
-            finalOpis = finalOpis.replace("RACUN_ID=", "R:");
-            String trimmed = finalOpis.length() > 900 ? finalOpis.substring(0, 900) : finalOpis;
-            String timeStr = new SimpleDateFormat("HH:mm:ss.SSS", Locale.US).format(new Date());
-            finalOpis = "MAID:" + mob + " " + trimmed + " RosKasa/" + timeStr;
-        }
-
-        // Shranimo v lokalni pomnilnik da lahko v primeru crash dobimo zapise (Delphi frmKasaMobile.KronologNaDisk)
-        kronologNaDisk(finalOpis);
-
-        si.ros.RosKasa.soap.RosKasaSoapClient.vpisKronologijeAsyncDirect(
-                sUrl != null ? sUrl : "",
-                tok != null ? tok : "",
-                mob,
-                finalOpis,
-                osId,
-                obId
-        );
+        vpisiKronologijoSCasom(serverUrl, token, mobileId, opisOperacije, osebaId, obratId, null, null);
     }
 
     public void vpisiKronologijoDebugL1(String serverUrl, String token, String mobileId, String opisOperacije, Integer osebaId, Integer obratId) {
@@ -2145,6 +2227,10 @@ public class Globals {
         if (map != null) {
             cachedCenikVrCene.putAll(map);
         }
+    }
+
+    public synchronized java.util.Map<String, BigDecimal> getCachedCenikVrCene() {
+        return new java.util.HashMap<>(cachedCenikVrCene);
     }
 
     public synchronized BigDecimal findDnCena(String dnId, int nivo4Id) {

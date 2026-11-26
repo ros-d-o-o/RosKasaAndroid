@@ -12,7 +12,9 @@ import androidx.recyclerview.widget.RecyclerView;
 import java.util.ArrayList;
 import java.util.List;
 
+import si.ros.RosKasa.Globals;
 import si.ros.RosKasa.R;
+import si.ros.RosKasa.models.OsebaTp;
 import si.ros.RosKasa.models.RacunSeznamItem;
 
 public class RacunSeznamAdapter extends RecyclerView.Adapter<RacunSeznamAdapter.ViewHolder> {
@@ -54,7 +56,11 @@ public class RacunSeznamAdapter extends RecyclerView.Adapter<RacunSeznamAdapter.
     @Override
     public void onBindViewHolder(@NonNull ViewHolder holder, int position) {
         RacunSeznamItem item = items.get(position);
-        holder.tvRacunId.setText("Račun #" + item.getRacunId());
+        String kratice = resolveOwnerInitials(item.getKasiral());
+        String naslovRacuna = kratice.isEmpty()
+                ? ("Račun #" + item.getRacunId())
+                : ("Račun #" + item.getRacunId() + "  [" + kratice + "]");
+        holder.tvRacunId.setText(naslovRacuna);
         holder.tvMarker.setText("Miza: " + (item.getMarker() != null ? item.getMarker() : "-"));
         holder.tvZnesek.setText(item.getFormattedZnesek());
         holder.tvStatus.setText(item.getStatusDescription());
@@ -83,6 +89,20 @@ public class RacunSeznamAdapter extends RecyclerView.Adapter<RacunSeznamAdapter.
             }
             lastClickTime = clickTime;
         });
+    }
+
+    private String resolveOwnerInitials(Integer kasiralId) {
+        if (kasiralId == null || kasiralId <= 0) return "";
+        for (OsebaTp o : Globals.getInstance().getCachedOsebje()) {
+            if (o != null && o.getOsebaId() == kasiralId) {
+                String ini = o.getInicialke();
+                if (ini != null && !ini.trim().isEmpty()) {
+                    return ini.trim();
+                }
+                break;
+            }
+        }
+        return String.valueOf(kasiralId);
     }
 
     @Override

@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Dimenzije za 10"-12" tablice (sw720dp) -->
+    <dimen name="pos_ctrl_btn_height">58dp</dimen>
+    <dimen name="pos_narocila_btn_height">60dp</dimen>
+    <dimen name="pos_pay_btn_height">58dp</dimen>
+    <dimen name="pos_btn_text_size">13sp</dimen>
+    <dimen name="pos_status_text_size">18sp</dimen>
+    <dimen name="login_card_max_width">460dp</dimen>
+</resources>

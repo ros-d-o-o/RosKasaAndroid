@@ -75,6 +75,10 @@ public class RosKasaSoapClient {
     }
 
     public static void vpisKronologijeAsyncDirect(String serverUrl, String token, String mobileId, String opisOperacije, Integer osebaId, Integer obratId) {
+        vpisKronologijeAsyncDirect(serverUrl, token, mobileId, opisOperacije, osebaId, obratId, null);
+    }
+
+    public static void vpisKronologijeAsyncDirect(String serverUrl, String token, String mobileId, String opisOperacije, Integer osebaId, Integer obratId, String customDatumUra) {
         Globals g = Globals.getInstance();
         int finalOsebaId = (osebaId != null && osebaId > 0) ? osebaId : g.getTekocaOsebaId();
         int finalObratId = (obratId != null && obratId > 0) ? obratId : (g.getTocilnicaId() != null && g.getTocilnicaId() > 0 ? g.getTocilnicaId() : g.getHisObrat());
@@ -83,7 +87,29 @@ public class RosKasaSoapClient {
             opisOperacije = opisOperacije.substring(0, 950);
         }
 
+        // Če imamo Context, gre zapis vedno preko trajne lokalne vrste (izbriše se šele po uspešnem prenosu)
+        if (g.getAppContext() != null) {
+            si.ros.RosKasa.cache.KronologijaQueueManager.enqueue(
+                    g.getAppContext(),
+                    customDatumUra,
+                    opisOperacije,
+                    finalOsebaId,
+                    finalObratId,
+                    mobileId
+            );
+            si.ros.RosKasa.cache.KronologijaQueueManager.flushAsync(g.getAppContext(), serverUrl, token);
+            return;
+        }
+
+        // Fallback, če Context izjemoma še ni inicializiran
+        if (serverUrl == null || serverUrl.trim().isEmpty() || token == null || token.trim().isEmpty()) {
+            return;
+        }
+
         KronologijaTp kronologija = new KronologijaTp(opisOperacije, finalOsebaId, finalObratId);
+        if (customDatumUra != null && !customDatumUra.trim().isEmpty()) {
+            kronologija.setDatumUra(customDatumUra.trim());
+        }
 
         asyncExecutor.execute(() -> {
             try {
@@ -91,37 +117,49 @@ public class RosKasaSoapClient {
                 Log.d(TAG, "vpisKronologije USPEŠEN: " + kronologija.getOpisOperacije());
             } catch (Exception e) {
                 String msg = (e != null && e.getMessage() != null) ? e.getMessage() : (e != null ? e.toString() : "Neznana napaka");
-                String errorMsg = "vpisKronologije napaka: " + msg;
-                Log.e(TAG, errorMsg, e);
-                notifyError("insertKronologija", errorMsg);
+                Log.w(TAG, "vpisKronologije napaka: " + msg, e);
             }
         });
     }
 
     public static void vpisKronologije(String serverUrl, String token, String mobileId, KronologijaTp kronologija) throws Exception {
+        if (kronologija == null) return;
+        java.util.List<KronologijaTp> single = new java.util.ArrayList<>(1);
+        single.add(kronologija);
+        vpisKronologijeBatch(serverUrl, token, single);
+    }
+
+    public static void vpisKronologijeBatch(String serverUrl, String token, java.util.List<KronologijaTp> items) throws Exception {
+        if (items == null || items.isEmpty()) return;
+        if (serverUrl == null || serverUrl.trim().isEmpty()) {
+            throw new IllegalStateException("Strežnik URL ni nastavljen.");
+        }
+        if (token == null || token.trim().isEmpty()) {
+            throw new IllegalStateException("Avtentikacijski token ni nastavljen.");
+        }
+
         String methodName = "insertKronologija";
         String soapAction = NAMESPACE + "/" + methodName;
 
         SoapObject request = new SoapObject(NAMESPACE, methodName);
-
-        String opis = kronologija.getOpisOperacije();
-        if (opis != null && opis.length() > 950) {
-            opis = opis.substring(0, 950);
-        }
-
         SoapObject rq = new SoapObject(NAMESPACE, "ArrayOfKronologijaTp");
-        SoapObject item = new SoapObject(NAMESPACE, "KronologijaTp");
-        item.addProperty("DATUM_URA", kronologija.getDatumUra());
-        item.addProperty("OBRAT_ID", kronologija.getObratId());
-        item.addProperty("OPIS_OPERACIJE", opis != null ? opis : "");
-        item.addProperty("OSEBA_ID", kronologija.getOsebaId());
 
-        rq.addProperty("KronologijaTp", item);
-        request.addProperty("rq", rq);
-
-        if (token != null && !token.isEmpty()) {
-            request.addProperty("token", token);
+        for (KronologijaTp kronologija : items) {
+            if (kronologija == null) continue;
+            String opis = kronologija.getOpisOperacije();
+            if (opis != null && opis.length() > 950) {
+                opis = opis.substring(0, 950);
+            }
+            SoapObject item = new SoapObject(NAMESPACE, "KronologijaTp");
+            item.addProperty("DATUM_URA", kronologija.getDatumUra());
+            item.addProperty("OBRAT_ID", kronologija.getObratId());
+            item.addProperty("OPIS_OPERACIJE", opis != null ? opis : "");
+            item.addProperty("OSEBA_ID", kronologija.getOsebaId());
+            rq.addProperty("KronologijaTp", item);
         }
+
+        request.addProperty("rq", rq);
+        request.addProperty("token", token);
 
         SoapSerializationEnvelope envelope = createEnvelope(request);
         String fullEndpoint = formatEndpoint(serverUrl);
@@ -316,7 +354,8 @@ public class RosKasaSoapClient {
                     ", printerRacuni='" + Globals.getInstance().getPrinterRacuni() + "'");
 
             String opis = "Klic getAppConfig (PRINTER_RACUNI='" + Globals.getInstance().getPrinterRacuni() + "', TIPKE_POS_ID=" + setup.getTipkePosId() + ", HIS_OBRAT=" + setup.getHisObrat() + ") -> uspeh.";
-            vpisKronologijeAsync(serverUrl, token, String.valueOf(finalMobId), opis, 0, setup.getTocilnicaId() > 0 ? setup.getTocilnicaId() : setup.getHisObrat());
+            int obratId = (setup.getTocilnicaId() != null && setup.getTocilnicaId() > 0) ? setup.getTocilnicaId() : setup.getHisObrat();
+            vpisKronologijeAsync(serverUrl, token, String.valueOf(finalMobId), opis, 0, obratId);
 
         } catch (Exception e) {
             String msg = (e != null && e.getMessage() != null) ? e.getMessage() : (e != null ? e.toString() : "Neznana napaka");
@@ -1058,6 +1097,114 @@ public class RosKasaSoapClient {
         if (fPlaciloStr != null) np.setfPlacilo(fPlaciloStr);
 
         return np;
+    }
+
+    /**
+     * Kliče SOAP metodo getRacuni (ArrayOfRacunTp), ki za razliko od getRacuniSeznam
+     * vsebuje tudi PLACANO in RACPLACI — nujno za takojšen pravilen prikaz plačanih miz (zelena barva).
+     */
+    public static List<RacunSeznamItem> getRacuniForMize(String serverUrl, String token, String mobileId, int status, String odDatum, int osebaId, int strmId) throws Exception {
+        String methodName = "getRacuni";
+        String soapAction = NAMESPACE + "/" + methodName;
+
+        SoapObject request = new SoapObject(NAMESPACE, methodName);
+        SoapObject rq = new SoapObject(NAMESPACE, "GetRacuniRqTp");
+        if (odDatum != null && !odDatum.isEmpty()) {
+            rq.addProperty("OD_DATUM", odDatum);
+        }
+        if (osebaId > 0) {
+            rq.addProperty("OSEBA_ID", osebaId);
+        }
+        rq.addProperty("STATUS", status);
+        if (strmId > 0) {
+            rq.addProperty("TOCILNICA_ID", strmId);
+        }
+
+        request.addProperty("rq", rq);
+        if (token != null && !token.isEmpty()) {
+            request.addProperty("token", token);
+        }
+
+        SoapSerializationEnvelope envelope = createEnvelope(request);
+        String fullEndpoint = formatEndpoint(serverUrl);
+        HttpTransportSE transport = new HttpTransportSE(fullEndpoint, TIMEOUT_MS);
+        transport.debug = true;
+
+        List<RacunSeznamItem> list = new ArrayList<>();
+        try {
+            transport.call(soapAction, envelope);
+            if (envelope.bodyIn instanceof SoapFault) {
+                SoapFault fault = (SoapFault) envelope.bodyIn;
+                throw new Exception("SoapFault: " + fault.faultstring);
+            }
+            if (envelope.bodyIn instanceof SoapObject) {
+                SoapObject response = (SoapObject) envelope.bodyIn;
+                if (response.hasProperty("getRacuniResult")) {
+                    Object resObj = response.getProperty("getRacuniResult");
+                    if (resObj instanceof SoapObject) {
+                        response = (SoapObject) resObj;
+                    }
+                }
+                String faultVal = getPropertyStringSafe(response, "fault");
+                if (faultVal != null && !faultVal.isEmpty()) {
+                    throw new Exception("SERVER FAULT v " + methodName + ": " + faultVal);
+                }
+                if (response.hasProperty("Racuni")) {
+                    Object racuniProp = response.getProperty("Racuni");
+                    if (racuniProp instanceof SoapObject) {
+                        SoapObject racuniObj = (SoapObject) racuniProp;
+                        int count = racuniObj.getPropertyCount();
+                        for (int i = 0; i < count; i++) {
+                            Object itemObj = racuniObj.getProperty(i);
+                            if (itemObj instanceof SoapObject) {
+                                RacunTp r = parseRacunTp((SoapObject) itemObj);
+                                if (r != null && r.getRacunId() > 0) {
+                                    RacunSeznamItem si = new RacunSeznamItem();
+                                    si.setRacunId(r.getRacunId());
+                                    si.setMarker(r.getMarker());
+                                    si.setStatus(r.getStatus());
+                                    si.setKasiral(r.getKasiral());
+                                    si.setStornoRacunId(r.getStornoRacunId());
+                                    si.setStornoOriginal(r.getStornoOriginal());
+                                    si.setZnesek(r.getZnesek());
+
+                                    BigDecimal placano = r.getPlacano() != null ? r.getPlacano() : BigDecimal.ZERO;
+                                    boolean imaAktivnoPlacilo = false;
+                                    if (r.getRacPlaci() != null) {
+                                        BigDecimal sumPl = BigDecimal.ZERO;
+                                        for (PlaciloTp pl : r.getRacPlaci()) {
+                                            if (pl != null && !pl.isRowDeleted() && pl.getPlaciloId() > 0 && pl.getPlaciloId() != 99) {
+                                                imaAktivnoPlacilo = true;
+                                                if (pl.getDelniZnesek() != null && pl.getDelniZnesek().compareTo(BigDecimal.ZERO) > 0) {
+                                                    sumPl = sumPl.add(pl.getDelniZnesek());
+                                                } else if (pl.getZnesek() != null && pl.getZnesek().compareTo(BigDecimal.ZERO) > 0) {
+                                                    sumPl = sumPl.add(pl.getZnesek());
+                                                }
+                                            }
+                                        }
+                                        if (sumPl.compareTo(placano) > 0) {
+                                            placano = sumPl;
+                                        }
+                                    }
+                                    si.setPlacano(placano);
+                                    if (imaAktivnoPlacilo || placano.compareTo(BigDecimal.ZERO) > 0) {
+                                        si.setIsLocked(true);
+                                        Globals.getInstance().setRacunPlacano(r.getRacunId(), placano);
+                                    } else {
+                                        Globals.getInstance().removeRacunPlacano(r.getRacunId());
+                                    }
+                                    list.add(si);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            return list;
+        } catch (Exception e) {
+            Log.w(TAG, "getRacuni za mize ni uspel, fallback na getRacuniSeznam: " + e.getMessage());
+            return getRacuniSeznam(serverUrl, token, mobileId, status, odDatum, osebaId, strmId);
+        }
     }
 
     public static List<RacunSeznamItem> getRacuniSeznam(String serverUrl, String token, String mobileId, int status, String odDatum) throws Exception {

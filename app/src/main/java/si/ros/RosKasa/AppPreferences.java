@@ -108,6 +108,9 @@ public class AppPreferences {
         int mobId = 1;
         try { mobId = Integer.parseInt(getMobileId()); } catch (Exception ignored) {}
         Globals.getInstance().loadFromMobileSetup(setup, mobId);
+        Globals.getInstance().setCasGetAppConfig(
+                new java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss", java.util.Locale.US).format(new java.util.Date())
+        );
 
         // Shrani šifrante tudi lokalno v JSON datoteko
         si.ros.RosKasa.cache.LocalCacheManager.saveSifranti(context, setup);
@@ -195,8 +198,8 @@ public class AppPreferences {
     }
 
     public String getServerUrl() {
-        String url = prefs.getString(KEY_SERVER_URL, "https://web.ros.si/ora/r16f/asmx/kasa.asmx");
-        return RosKasaSoapClient.formatEndpoint(url);
+        String url = prefs.getString(KEY_SERVER_URL, "");
+        return (url != null && !url.trim().isEmpty()) ? RosKasaSoapClient.formatEndpoint(url) : "";
     }
 
     public String getMobileId() {

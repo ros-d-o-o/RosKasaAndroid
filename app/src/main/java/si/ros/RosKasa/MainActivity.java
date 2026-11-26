@@ -1,9 +1,15 @@
 package si.ros.RosKasa;
 
 import android.os.Bundle;
+import android.view.View;
 import android.widget.Toast;
 
 import androidx.appcompat.app.AppCompatActivity;
+import androidx.core.graphics.Insets;
+import androidx.core.view.ViewCompat;
+import androidx.core.view.WindowCompat;
+import androidx.core.view.WindowInsetsCompat;
+import androidx.core.view.WindowInsetsControllerCompat;
 import androidx.fragment.app.Fragment;
 
 import java.math.BigDecimal;
@@ -16,11 +22,36 @@ public class MainActivity extends AppCompatActivity {
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
-        setContentView(R.layout.activity_main);
 
-        AppPreferences prefs = new AppPreferences(this);
+        // Zabeleži začetek zagona aplikacije in verzijo APK (še pred povezavo na web service)
         Globals g = Globals.getInstance();
         g.initContext(getApplicationContext());
+        g.markAppStartupBegin(this);
+
+        setContentView(R.layout.activity_main);
+
+        // Android 15 / 16 (Pixel 9, targetSdk 36) edge-to-edge zaščita:
+        // vsebina ne sme segati pod statusno vrstico (ura, wifi, kamera) ali navigacijsko vrstico
+        WindowInsetsControllerCompat insetsController = WindowCompat.getInsetsController(getWindow(), getWindow().getDecorView());
+        if (insetsController != null) {
+            insetsController.setAppearanceLightStatusBars(false);
+            insetsController.setAppearanceLightNavigationBars(false);
+        }
+        View rootContainer = findViewById(R.id.fragmentContainer);
+        if (rootContainer != null) {
+            ViewCompat.setOnApplyWindowInsetsListener(rootContainer, (v, windowInsets) -> {
+                Insets systemBars = windowInsets.getInsets(
+                        WindowInsetsCompat.Type.systemBars() | WindowInsetsCompat.Type.displayCutout()
+                );
+                Insets ime = windowInsets.getInsets(WindowInsetsCompat.Type.ime());
+                int bottom = Math.max(systemBars.bottom, ime.bottom);
+                v.setPadding(systemBars.left, systemBars.top, systemBars.right, bottom);
+                return WindowInsetsCompat.CONSUMED;
+            });
+            ViewCompat.requestApplyInsets(rootContainer);
+        }
+
+        AppPreferences prefs = new AppPreferences(this);
         g.setServerUrl(prefs.getServerUrl());
         g.setToken(prefs.getToken());
         g.setNazivMobile(prefs.getNaziv());
@@ -47,6 +78,7 @@ public class MainActivity extends AppCompatActivity {
         if (savedInstanceState == null) {
             navigateToFragment(new LoginFragment());
         }
+        lastOrientation = getResources().getConfiguration().orientation;
 
         // Android gumb Back: potrditveni dialog za izhod + pošiljanje kronologije (skladno z Delphi)
         getOnBackPressedDispatcher().addCallback(this, new androidx.activity.OnBackPressedCallback(true) {
@@ -151,6 +183,29 @@ public class MainActivity extends AppCompatActivity {
         si.ros.RosKasa.nfc.NfcHelper.NfcCardInfo cardInfo = si.ros.RosKasa.nfc.NfcHelper.extractTagFromIntent(intent);
         if (cardInfo != null && nfcTagListener != null) {
             nfcTagListener.onTagRead(cardInfo);
+        }
+    }
+
+    private int lastOrientation = android.content.res.Configuration.ORIENTATION_UNDEFINED;
+
+    @Override
+    public void onConfigurationChanged(@androidx.annotation.NonNull android.content.res.Configuration newConfig) {
+        super.onConfigurationChanged(newConfig);
+        if (newConfig.orientation != lastOrientation) {
+            lastOrientation = newConfig.orientation;
+            // Ponovno izriši aktivni fragment, da Android naloži ustrezen layout (layout/ <-> layout-sw600dp-land/)
+            // brez izgube stanja računa v Globals.currentRacun
+            Fragment current = getSupportFragmentManager().findFragmentById(R.id.fragmentContainer);
+            if (current != null && !isFinishing() && !isDestroyed()) {
+                getSupportFragmentManager()
+                        .beginTransaction()
+                        .detach(current)
+                        .commitNowAllowingStateLoss();
+                getSupportFragmentManager()
+                        .beginTransaction()
+                        .attach(current)
+                        .commitNowAllowingStateLoss();
+            }
         }
     }
 

@@ -139,9 +139,8 @@ public class NarocilaFragment extends Fragment {
     }
 
     private void setupQuickKeysRecyclerView() {
-        boolean isLandscape = getResources().getConfiguration().orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE;
-        int spanCount = isLandscape ? 7 : 5;
-        int maxKeys = isLandscape ? 28 : 25;
+        int spanCount = DeviceLayoutHelper.getQuickKeysSpanCount(requireContext());
+        int maxKeys = DeviceLayoutHelper.getQuickKeysMaxCount(requireContext());
 
         quickKeyAdapter = new QuickKeyAdapter(key -> {
             if (key.isBack) {
@@ -199,9 +198,8 @@ public class NarocilaFragment extends Fragment {
     @Override
     public void onConfigurationChanged(@NonNull android.content.res.Configuration newConfig) {
         super.onConfigurationChanged(newConfig);
-        boolean isLandscape = newConfig.orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE;
-        int spanCount = isLandscape ? 7 : 5;
-        int maxKeys = isLandscape ? 28 : 25;
+        int spanCount = DeviceLayoutHelper.getQuickKeysSpanCount(requireContext());
+        int maxKeys = DeviceLayoutHelper.getQuickKeysMaxCount(requireContext());
         if (quickKeyAdapter != null) {
             quickKeyAdapter.setMaxKeys(maxKeys);
         }
@@ -219,7 +217,6 @@ public class NarocilaFragment extends Fragment {
                 try {
                     RacunTp loaded = RosKasaSoapClient.getRacun(prefs.getServerUrl(), prefs.getToken(), activeRacunId);
                     mainHandler.post(() -> {
-                        enableEkran();
                         if (loaded != null) {
                             currentRacun = loaded;
                             hasUnsavedChanges = false;
@@ -232,6 +229,7 @@ public class NarocilaFragment extends Fragment {
                         } else {
                             initNewRacun();
                         }
+                        enableEkran();
                     });
                 } catch (Exception e) {
                     mainHandler.post(() -> {
@@ -407,46 +405,49 @@ public class NarocilaFragment extends Fragment {
         }
     }
 
-    private boolean isRacunZaklenjen() {
-        if (currentRacun == null) return false;
+    private String getZaklenjenRazlog() {
+        if (currentRacun == null) return null;
         Integer status = currentRacun.getStatus();
         if (status != null && status >= 2) {
-            return true;
+            return "STATUS=" + status;
         }
         if (currentRacun.isPlacan()) {
-            return true;
+            return "PLAČAN";
         }
         // Delphi FormKasaMobile.pas:5208, 8132: PreprecimEditStornoPozicij zaklene urejanje pozicij na novem računu iz storna
-        if (Globals.getInstance().isDovoljeno(si.ros.RosKasa.models.PraviceConsts.SpreprecimEditStornoPozicij)
-                && currentRacun.getStornoOriginal() != null && currentRacun.getStornoOriginal() != 0
+        if (currentRacun.getStornoOriginal() != null && currentRacun.getStornoOriginal() != 0
                 && (currentRacun.getUrejamStorno() == null || currentRacun.getUrejamStorno() == 0)) {
-            return true;
+            if (Globals.getInstance().isDovoljeno(si.ros.RosKasa.models.PraviceConsts.SpreprecimEditStornoPozicij)
+                    || (currentRacun.getUrejamStorno() != null && currentRacun.getUrejamStorno() == 0)) {
+                return "STORNO_ORIG=" + currentRacun.getStornoOriginal();
+            }
         }
         // Zaklep ob delnih plačilih (RACPLACI > 0)
         if (currentRacun.getRacPlaci() != null) {
             for (PlaciloTp pl : currentRacun.getRacPlaci()) {
-                if (pl != null && !pl.isRowDeleted()) {
-                    return true;
+                if (pl != null && !pl.isRowDeleted() && pl.getPlaciloId() > 0) {
+                    return "DELNO PLAČILO (PL=" + pl.getPlaciloId() + ")";
                 }
             }
         }
         if (currentRacun.getStornoRacunId() != null && currentRacun.getStornoRacunId() > 0) {
-            return true;
+            return "STORNIRAN (#" + currentRacun.getStornoRacunId() + ")";
         }
         if (currentRacun.getLojalnostId() != null && currentRacun.getLojalnostId() > 0) {
-            return true;
+            return "LOJALNOST=" + currentRacun.getLojalnostId();
         }
         if (currentRacun.getAkcijaId() != null && currentRacun.getAkcijaId() > 0) {
-            return true;
-        }
-        if (currentRacun.getUrejamStorno() != null && currentRacun.getUrejamStorno() == 0) {
-            return true;
+            return "AKCIJA=" + currentRacun.getAkcijaId();
         }
         String bkarta = currentRacun.getBkartaId() != null ? currentRacun.getBkartaId().trim() : "";
-        if (!bkarta.isEmpty() && !"0".equals(bkarta)) {
-            return true;
+        if (!bkarta.isEmpty() && !"0".equals(bkarta) && !"null".equalsIgnoreCase(bkarta) && !"anyType{}".equals(bkarta)) {
+            return "BKARTA=" + bkarta;
         }
-        return false;
+        return null;
+    }
+
+    private boolean isRacunZaklenjen() {
+        return getZaklenjenRazlog() != null;
     }
 
     private final Runnable enableEkranSafetyRunnable = () -> {
@@ -818,11 +819,14 @@ public class NarocilaFragment extends Fragment {
         }
 
         BigDecimal placano = (currentRacun != null && currentRacun.getPlacano() != null) ? currentRacun.getPlacano() : BigDecimal.ZERO;
-        boolean zaklenjen = isRacunZaklenjen();
+        String zaklenjenRazlog = getZaklenjenRazlog();
+        boolean zaklenjen = (zaklenjenRazlog != null);
 
         if (zaklenjen) {
             binding.tvMizaStatus.setTextColor(android.graphics.Color.RED);
-            String oznaka = (currentRacun != null && currentRacun.isPlacan()) ? "[PLAČAN - ZAKLENJENO]" : "[ZAKLJUČEN - UREJANJE NI DOVOLJENO]";
+            String oznaka = (currentRacun != null && currentRacun.isPlacan())
+                    ? "[PLAČAN - ZAKLENJENO]"
+                    : "[ZAKLJUČEN (" + zaklenjenRazlog + ")]";
             binding.tvMizaStatus.setText(String.format(Locale.getDefault(), "M: %s  -  Zn: %.2f / Pl: %.2f %s", activeMarker, totalZnesek, placano, oznaka));
             binding.btnBrisanje.setEnabled(false);
             binding.btnNarociPost.setEnabled(false);
@@ -1354,6 +1358,15 @@ public class NarocilaFragment extends Fragment {
     }
 
     private void loadHitreTipkeFromApi() {
+        if (Globals.getInstance().hasCachedHitreTipke()) {
+            allApiHitreTipke.clear();
+            allApiHitreTipke.addAll(Globals.getInstance().getCachedHitreTipke());
+            currentSkupinaId = 1;
+            skupinaHistory.clear();
+            displayQuickKeysForGroup(1);
+            return;
+        }
+
         int tipkePosId = prefs.getTipkePosId();
 
         if (!prefs.isRegistered()) {
@@ -1427,8 +1440,7 @@ public class NarocilaFragment extends Fragment {
             return;
         }
 
-        boolean isLandscape = getResources().getConfiguration().orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE;
-        int maxKeys = isLandscape ? 28 : 25;
+        int maxKeys = DeviceLayoutHelper.getQuickKeysMaxCount(requireContext());
 
         List<QuickKeyAdapter.QuickKey> keys = new ArrayList<>();
         List<QuickKeyAdapter.QuickKey> groupKeys = new ArrayList<>();

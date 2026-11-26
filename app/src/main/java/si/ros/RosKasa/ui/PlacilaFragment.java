@@ -2390,6 +2390,11 @@ public class PlacilaFragment extends Fragment {
             }
         }
 
+        if (zadnje == null) {
+            Toast.makeText(requireContext(), "Najprej poknjižite plačilo, nato vnesite opis računa / partnerja!", Toast.LENGTH_LONG).show();
+            return;
+        }
+
         String initNaziv = (zadnje != null && zadnje.getNazivPartner() != null) ? zadnje.getNazivPartner() : "";
         String initNaslov = (zadnje != null && zadnje.getNaslovPartner() != null) ? zadnje.getNaslovPartner() : "";
         String initDavcna = (zadnje != null && zadnje.getDavcnaSt() != null) ? zadnje.getDavcnaSt() : "";

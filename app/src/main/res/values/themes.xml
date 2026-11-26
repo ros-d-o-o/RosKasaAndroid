@@ -4,6 +4,9 @@
         <item name="colorPrimary">@color/pos_accent_blue</item>
         <item name="colorSecondary">@color/pos_accent_green</item>
         <item name="android:windowBackground">@color/pos_bg_dark</item>
+        <item name="android:statusBarColor">@color/pos_header_bg</item>
+        <item name="android:navigationBarColor">@color/pos_bg_dark</item>
+        <item name="android:windowLightStatusBar">false</item>
         <item name="android:textColor">@color/pos_btn_text</item>
 
         <!-- Nastavitev teme za vse potrditvene dialoge v aplikaciji -->
@@ -70,5 +73,9 @@
         <item name="android:windowNoTitle">true</item>
         <item name="android:windowIsFloating">false</item>
         <item name="android:windowBackground">@color/pos_bg_dark</item>
+        <item name="android:statusBarColor">@color/pos_header_bg</item>
+        <item name="android:navigationBarColor">@color/pos_bg_dark</item>
+        <item name="android:windowLightStatusBar">false</item>
+        <item name="android:fitsSystemWindows">true</item>
     </style>
 </resources>

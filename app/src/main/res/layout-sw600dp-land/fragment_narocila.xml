@@ -1,49 +1,59 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!-- Tablica Landscape (sw600dp-land) po vzoru Delphi Windows Landscape:
+     ZGORAJ: Levo (52%) seznam vrstic + statusna vrstica | Desno (48%) 3x5 krmilne tipke
+     SPODAJ: 100% širine za 7-stolpčne Hitre tipke ali Cenik -->
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:orientation="horizontal"
+    android:orientation="vertical"
     android:background="@color/pos_bg_dark">
 
-    <!-- LEVA STRAN (40%): Seznam vrstic naročila + Statusna vrstica -->
+    <!-- ZGORNJI DEL (~40%): Seznam vrstic levo | 3x5 krmilne tipke desno -->
     <LinearLayout
-        android:layout_width="0dp"
-        android:layout_height="match_parent"
-        android:layout_weight="0.4"
-        android:orientation="vertical"
-        android:paddingEnd="2dp">
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="0.40"
+        android:orientation="horizontal">
 
-        <androidx.recyclerview.widget.RecyclerView
-            android:id="@+id/rvNarociloItems"
-            android:layout_width="match_parent"
-            android:layout_height="0dp"
-            android:layout_weight="1"
-            android:padding="2dp"
-            android:background="#222222" />
+        <!-- Zgoraj levo (52%): Seznam vrstic naročila + Statusna vrstica -->
+        <LinearLayout
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_weight="0.52"
+            android:orientation="vertical"
+            android:paddingEnd="3dp">
 
-        <TextView
-            android:id="@+id/tvMizaStatus"
-            android:layout_width="match_parent"
-            android:layout_height="34dp"
-            android:background="#111111"
-            android:gravity="center"
-            android:textColor="#FFFFFF"
-            android:textSize="14sp"
-            android:textStyle="bold"
-            android:text="M: Miza 5  -  Zn: 4,00 / Pl: 0,00" />
-    </LinearLayout>
+            <androidx.recyclerview.widget.RecyclerView
+                android:id="@+id/rvNarociloItems"
+                android:layout_width="match_parent"
+                android:layout_height="0dp"
+                android:layout_weight="1"
+                android:padding="2dp"
+                android:background="#222222" />
 
-    <!-- DESNA STRAN (60%): Krmilni gumbi + Hitre tipke / Cenik -->
-    <LinearLayout
-        android:layout_width="0dp"
-        android:layout_height="match_parent"
-        android:layout_weight="0.6"
-        android:orientation="vertical">
+            <TextView
+                android:id="@+id/tvMizaStatus"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:minHeight="34dp"
+                android:paddingStart="8dp"
+                android:paddingEnd="8dp"
+                android:paddingTop="4dp"
+                android:paddingBottom="4dp"
+                android:background="#111111"
+                android:gravity="center"
+                android:textColor="#FFFFFF"
+                android:textSize="@dimen/pos_status_text_size"
+                android:textStyle="bold"
+                android:text="M: Miza 5  -  Zn: 4,00 / Pl: 0,00" />
+        </LinearLayout>
 
+        <!-- Zgoraj desno (48%): 3x5 Krmilne tipke -->
         <GridLayout
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_weight="0.48"
             android:columnCount="5"
             android:rowCount="3"
             android:alignmentMode="alignBounds"
@@ -55,9 +65,11 @@
                 android:id="@+id/btnNavMize"
                 style="@style/PosButtonStyle"
                 android:layout_width="0dp"
-                android:layout_height="44dp"
+                android:layout_height="0dp"
                 android:layout_columnWeight="1"
+                android:layout_rowWeight="1"
                 android:layout_gravity="fill"
+                android:textSize="@dimen/pos_btn_text_size"
                 android:backgroundTint="@color/pos_btn_normal"
                 android:text="@string/btn_mize"
                 android:textColor="#FFFFFF" />
@@ -66,9 +78,11 @@
                 android:id="@+id/btnNavRacuni"
                 style="@style/PosButtonStyle"
                 android:layout_width="0dp"
-                android:layout_height="44dp"
+                android:layout_height="0dp"
                 android:layout_columnWeight="1"
+                android:layout_rowWeight="1"
                 android:layout_gravity="fill"
+                android:textSize="@dimen/pos_btn_text_size"
                 android:backgroundTint="@color/pos_btn_normal"
                 android:text="@string/btn_racuni"
                 android:textColor="#FFFFFF" />
@@ -77,9 +91,11 @@
                 android:id="@+id/btnNavNarociSelf"
                 style="@style/PosButtonStyle"
                 android:layout_width="0dp"
-                android:layout_height="44dp"
+                android:layout_height="0dp"
                 android:layout_columnWeight="1"
+                android:layout_rowWeight="1"
                 android:layout_gravity="fill"
+                android:textSize="@dimen/pos_btn_text_size"
                 android:backgroundTint="@color/pos_accent_blue"
                 android:text="@string/btn_naroci"
                 android:textColor="#FFFFFF" />
@@ -88,9 +104,11 @@
                 android:id="@+id/btnNavPlacila"
                 style="@style/PosButtonStyle"
                 android:layout_width="0dp"
-                android:layout_height="44dp"
+                android:layout_height="0dp"
                 android:layout_columnWeight="1"
+                android:layout_rowWeight="1"
                 android:layout_gravity="fill"
+                android:textSize="@dimen/pos_btn_text_size"
                 android:backgroundTint="@color/pos_btn_normal"
                 android:text="@string/btn_placila"
                 android:textColor="#FFFFFF" />
@@ -99,9 +117,11 @@
                 android:id="@+id/btnOdjava"
                 style="@style/PosButtonStyle"
                 android:layout_width="0dp"
-                android:layout_height="44dp"
+                android:layout_height="0dp"
                 android:layout_columnWeight="1"
+                android:layout_rowWeight="1"
                 android:layout_gravity="fill"
+                android:textSize="@dimen/pos_btn_text_size"
                 android:backgroundTint="@color/pos_accent_red"
                 android:text="@string/btn_odjava"
                 android:textColor="#FFFFFF" />
@@ -111,9 +131,11 @@
                 android:id="@+id/btnBrisanje"
                 style="@style/PosButtonStyle"
                 android:layout_width="0dp"
-                android:layout_height="44dp"
+                android:layout_height="0dp"
                 android:layout_columnWeight="1"
+                android:layout_rowWeight="1"
                 android:layout_gravity="fill"
+                android:textSize="@dimen/pos_btn_text_size"
                 android:backgroundTint="@color/pos_btn_normal"
                 android:text="Brisanje"
                 android:textColor="#FFFFFF" />
@@ -122,9 +144,11 @@
                 android:id="@+id/btnCenikTipke"
                 style="@style/PosButtonStyle"
                 android:layout_width="0dp"
-                android:layout_height="44dp"
+                android:layout_height="0dp"
                 android:layout_columnWeight="1"
+                android:layout_rowWeight="1"
                 android:layout_gravity="fill"
+                android:textSize="@dimen/pos_btn_text_size"
                 android:backgroundTint="@color/pos_btn_normal"
                 android:text="CENIK/\nTIPKE"
                 android:textColor="#FFFFFF" />
@@ -133,9 +157,11 @@
                 android:id="@+id/btnHodi"
                 style="@style/PosButtonStyle"
                 android:layout_width="0dp"
-                android:layout_height="44dp"
+                android:layout_height="0dp"
                 android:layout_columnWeight="1"
+                android:layout_rowWeight="1"
                 android:layout_gravity="fill"
+                android:textSize="@dimen/pos_btn_text_size"
                 android:backgroundTint="@color/pos_btn_normal"
                 android:text="Hod-i"
                 android:textColor="#FFFFFF" />
@@ -144,9 +170,11 @@
                 android:id="@+id/btnPreklopiCenik"
                 style="@style/PosButtonStyle"
                 android:layout_width="0dp"
-                android:layout_height="44dp"
+                android:layout_height="0dp"
                 android:layout_columnWeight="1"
+                android:layout_rowWeight="1"
                 android:layout_gravity="fill"
+                android:textSize="@dimen/pos_btn_text_size"
                 android:backgroundTint="@color/pos_btn_normal"
                 android:text="PREKLOPI\nCENIK"
                 android:textColor="#FFFFFF" />
@@ -155,9 +183,11 @@
                 android:id="@+id/btnNarociPost"
                 style="@style/PosButtonStyle"
                 android:layout_width="0dp"
-                android:layout_height="44dp"
+                android:layout_height="0dp"
                 android:layout_columnWeight="1"
+                android:layout_rowWeight="1"
                 android:layout_gravity="fill"
+                android:textSize="@dimen/pos_btn_text_size"
                 android:backgroundTint="@color/pos_accent_green"
                 android:text="NAROČI"
                 android:textColor="#FFFFFF" />
@@ -167,9 +197,11 @@
                 android:id="@+id/btnPopust"
                 style="@style/PosButtonStyle"
                 android:layout_width="0dp"
-                android:layout_height="44dp"
+                android:layout_height="0dp"
                 android:layout_columnWeight="1"
+                android:layout_rowWeight="1"
                 android:layout_gravity="fill"
+                android:textSize="@dimen/pos_btn_text_size"
                 android:backgroundTint="@color/pos_btn_normal"
                 android:text="Popust"
                 android:textColor="#FFFFFF" />
@@ -178,9 +210,11 @@
                 android:id="@+id/btnGostHotela"
                 style="@style/PosButtonStyle"
                 android:layout_width="0dp"
-                android:layout_height="44dp"
+                android:layout_height="0dp"
                 android:layout_columnWeight="1"
+                android:layout_rowWeight="1"
                 android:layout_gravity="fill"
+                android:textSize="@dimen/pos_btn_text_size"
                 android:backgroundTint="@color/pos_btn_normal"
                 android:text="GOST\nHOTELA"
                 android:textColor="#FFFFFF" />
@@ -189,9 +223,11 @@
                 android:id="@+id/btnKreditnaPos"
                 style="@style/PosButtonStyle"
                 android:layout_width="0dp"
-                android:layout_height="44dp"
+                android:layout_height="0dp"
                 android:layout_columnWeight="1"
+                android:layout_rowWeight="1"
                 android:layout_gravity="fill"
+                android:textSize="@dimen/pos_btn_text_size"
                 android:backgroundTint="@color/pos_btn_normal"
                 android:text="KREDITNA K\nPOS"
                 android:textColor="#FFFFFF" />
@@ -200,9 +236,11 @@
                 android:id="@+id/btnKredRocno"
                 style="@style/PosButtonStyle"
                 android:layout_width="0dp"
-                android:layout_height="44dp"
+                android:layout_height="0dp"
                 android:layout_columnWeight="1"
+                android:layout_rowWeight="1"
                 android:layout_gravity="fill"
+                android:textSize="@dimen/pos_btn_text_size"
                 android:backgroundTint="@color/pos_btn_normal"
                 android:text="KRED. K\nROCNO"
                 android:textColor="#FFFFFF" />
@@ -211,27 +249,35 @@
                 android:id="@+id/btnGotovina"
                 style="@style/PosButtonStyle"
                 android:layout_width="0dp"
-                android:layout_height="44dp"
+                android:layout_height="0dp"
                 android:layout_columnWeight="1"
+                android:layout_rowWeight="1"
                 android:layout_gravity="fill"
+                android:textSize="@dimen/pos_btn_text_size"
                 android:backgroundTint="@color/pos_btn_normal"
                 android:text="Gotovina"
                 android:textColor="#FFFFFF" />
         </GridLayout>
+    </LinearLayout>
+
+    <!-- SPODNJI DEL (~60%, 100% širine): 7-stolpčne Hitre tipke ali Cenik -->
+    <FrameLayout
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="0.60"
+        android:paddingTop="2dp">
 
         <androidx.recyclerview.widget.RecyclerView
             android:id="@+id/rvQuickKeys"
             android:layout_width="match_parent"
-            android:layout_height="0dp"
-            android:layout_weight="1"
-            android:padding="1dp"
+            android:layout_height="match_parent"
+            android:padding="2dp"
             android:background="#1B1B1B" />
 
         <LinearLayout
             android:id="@+id/llCenikContainer"
             android:layout_width="match_parent"
-            android:layout_height="0dp"
-            android:layout_weight="1"
+            android:layout_height="match_parent"
             android:orientation="vertical"
             android:background="#263238"
             android:visibility="gone">
@@ -239,19 +285,19 @@
             <LinearLayout
                 android:id="@+id/llCenikSearch"
                 android:layout_width="match_parent"
-                android:layout_height="40dp"
+                android:layout_height="44dp"
                 android:orientation="horizontal"
                 android:gravity="center_vertical"
                 android:background="#37474F"
-                android:paddingStart="8dp"
-                android:paddingEnd="8dp">
+                android:paddingStart="10dp"
+                android:paddingEnd="10dp">
 
                 <TextView
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:text="🔍 "
                     android:textColor="#CCCCCC"
-                    android:textSize="15sp" />
+                    android:textSize="16sp" />
 
                 <EditText
                     android:id="@+id/etSearchCenik"
@@ -259,17 +305,17 @@
                     android:layout_height="match_parent"
                     android:layout_weight="1"
                     android:background="@null"
-                    android:hint="Išči artikel po nazivu ali kodi..."
+                    android:hint="Išči artikel po nazivu ali kodi (npr. coc)..."
                     android:textColor="#FFFFFF"
                     android:textColorHint="#90A4AE"
-                    android:textSize="14sp"
+                    android:textSize="15sp"
                     android:singleLine="true"
                     android:imeOptions="actionSearch" />
 
                 <ImageButton
                     android:id="@+id/btnClearSearch"
-                    android:layout_width="34dp"
-                    android:layout_height="34dp"
+                    android:layout_width="36dp"
+                    android:layout_height="36dp"
                     android:background="?attr/selectableItemBackgroundBorderless"
                     android:contentDescription="Počisti iskanje"
                     android:src="@android:drawable/ic_menu_close_clear_cancel"
@@ -284,6 +330,6 @@
                 android:padding="2dp"
                 android:background="#111111" />
         </LinearLayout>
-    </LinearLayout>
+    </FrameLayout>
 
 </LinearLayout>

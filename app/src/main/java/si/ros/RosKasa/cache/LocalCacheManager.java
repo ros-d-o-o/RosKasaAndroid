@@ -296,6 +296,15 @@ public class LocalCacheManager {
             }
             root.put("cenikVrVr", arrVrVr);
 
+            // 1c. CenikVrCene (DNCENIK)
+            JSONObject objVrCene = new JSONObject();
+            for (java.util.Map.Entry<String, BigDecimal> entry : g.getCachedCenikVrCene().entrySet()) {
+                if (entry.getKey() != null && entry.getValue() != null) {
+                    objVrCene.put(entry.getKey(), entry.getValue().toPlainString());
+                }
+            }
+            root.put("cenikVrCene", objVrCene);
+
             // 2. HitreTipke
             JSONArray arrHT = new JSONArray();
             for (HitraTipkaTp ht : g.getCachedHitreTipke()) {
@@ -449,6 +458,19 @@ public class LocalCacheManager {
                 }
             }
             if (!vrvr.isEmpty()) g.setCachedCenikVrVr(vrvr);
+
+            JSONObject objVrCene = root.optJSONObject("cenikVrCene");
+            if (objVrCene != null && objVrCene.length() > 0) {
+                java.util.Map<String, BigDecimal> vrCeneMap = new java.util.HashMap<>();
+                java.util.Iterator<String> keys = objVrCene.keys();
+                while (keys.hasNext()) {
+                    String k = keys.next();
+                    try {
+                        vrCeneMap.put(k, new BigDecimal(objVrCene.optString(k, "0")));
+                    } catch (Exception ignored) {}
+                }
+                if (!vrCeneMap.isEmpty()) g.setCachedCenikVrCene(vrCeneMap);
+            }
 
             List<HitraTipkaTp> htList = new ArrayList<>();
             JSONArray arrHT = root.optJSONArray("hitreTipke");
