@@ -56,17 +56,51 @@ public class RacunSeznamAdapter extends RecyclerView.Adapter<RacunSeznamAdapter.
     @Override
     public void onBindViewHolder(@NonNull ViewHolder holder, int position) {
         RacunSeznamItem item = items.get(position);
-        String kratice = resolveOwnerInitials(item.getKasiral());
-        String naslovRacuna = kratice.isEmpty()
+        Globals g = Globals.getInstance();
+        int kasiralId = item.getKasiral() != null ? item.getKasiral() : 0;
+        boolean isMy = kasiralId > 0 && kasiralId == g.getTekocaOsebaId();
+        boolean isOpenStatus1 = item.getStatus() != null && item.getStatus() == 1;
+        boolean isPlacano = isRacunPlacan(item);
+
+        String ownerLabel = resolveOwnerLabel(kasiralId);
+        String naslovRacuna = ownerLabel.isEmpty()
                 ? ("Račun #" + item.getRacunId())
-                : ("Račun #" + item.getRacunId() + "  [" + kratice + "]");
+                : ("Račun #" + item.getRacunId() + "  [" + ownerLabel + "]");
         holder.tvRacunId.setText(naslovRacuna);
         holder.tvMarker.setText("Miza: " + (item.getMarker() != null ? item.getMarker() : "-"));
-        holder.tvZnesek.setText(item.getFormattedZnesek());
-        holder.tvStatus.setText(item.getStatusDescription());
+        holder.tvZnesek.setText(isPlacano && isOpenStatus1
+                ? (item.getFormattedZnesek() + " ✓")
+                : item.getFormattedZnesek());
+        String statusDesc = item.getStatusDescription();
+        if (isOpenStatus1 && isPlacano) {
+            statusDesc = statusDesc + " • Plačano ✓";
+        }
+        holder.tvStatus.setText(statusDesc);
+
+        // Enaka barvna logika kot na Mizah (brez dodatnih SOAP klicev):
+        // 1. ZELENA - odprt račun (STATUS=1), ki je že plačan (pripravljen za izpis)
+        // 2. MODRA  - moj račun (trenutno prijavljen natakar)
+        // 3. RDEČA  - račun drugega natakarja
+        int baseBg;
+        if (isOpenStatus1 && isPlacano) {
+            baseBg = Color.parseColor("#2E7D32"); // Zelena - plačano / zaklenjeno
+        } else if (isMy) {
+            baseBg = Color.parseColor("#1565C0"); // Modra - moj račun
+        } else if (kasiralId > 0) {
+            baseBg = Color.parseColor("#B71C1C"); // Rdeča - račun drugega natakarja
+        } else {
+            baseBg = Color.parseColor("#333333");
+        }
 
         boolean isSelected = (position == selectedPosition);
-        holder.itemView.setBackgroundColor(isSelected ? Color.parseColor("#1976D2") : Color.parseColor("#333333"));
+        if (isSelected) {
+            // Svetlejši poudarek ob izbiri vrstice, da ostane jasno vidna izbrana vrstica
+            holder.itemView.setBackgroundColor(Color.parseColor("#0288D1"));
+            holder.itemView.setAlpha(1.0f);
+        } else {
+            holder.itemView.setBackgroundColor(baseBg);
+            holder.itemView.setAlpha(0.92f);
+        }
 
         holder.itemView.setOnClickListener(v -> {
             long clickTime = System.currentTimeMillis();
@@ -91,11 +125,34 @@ public class RacunSeznamAdapter extends RecyclerView.Adapter<RacunSeznamAdapter.
         });
     }
 
-    private String resolveOwnerInitials(Integer kasiralId) {
+    private boolean isRacunPlacan(RacunSeznamItem acc) {
+        if (acc == null) return false;
+        if (acc.isPlacan() || acc.hasAnyPayment()) return true;
+        if (acc.getPlacano() != null && acc.getPlacano().compareTo(java.math.BigDecimal.ZERO) != 0) {
+            return true;
+        }
+        Globals g = Globals.getInstance();
+        java.math.BigDecimal cachedPl = g.getRacunPlacano(acc.getRacunId());
+        if (cachedPl != null && cachedPl.compareTo(java.math.BigDecimal.ZERO) != 0) {
+            return true;
+        }
+        si.ros.RosKasa.models.RacunTp cur = g.getCurrentRacun();
+        if (cur != null && cur.getRacunId() == acc.getRacunId()
+                && cur.getPlacano() != null && cur.getPlacano().compareTo(java.math.BigDecimal.ZERO) != 0) {
+            return true;
+        }
+        return false;
+    }
+
+    private String resolveOwnerLabel(Integer kasiralId) {
         if (kasiralId == null || kasiralId <= 0) return "";
         for (OsebaTp o : Globals.getInstance().getCachedOsebje()) {
             if (o != null && o.getOsebaId() == kasiralId) {
+                String naziv = o.getNaziv();
                 String ini = o.getInicialke();
+                if (naziv != null && !naziv.trim().isEmpty()) {
+                    return naziv.trim();
+                }
                 if (ini != null && !ini.trim().isEmpty()) {
                     return ini.trim();
                 }
