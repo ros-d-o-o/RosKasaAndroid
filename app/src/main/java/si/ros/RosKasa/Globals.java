@@ -548,7 +548,7 @@ public class Globals {
                 this.serverUrl,
                 this.token,
                 String.valueOf(this.mobileId),
-                "START aplikacije RosKasa v" + ver,
+                "START aplikacije RosKasa APK v" + ver,
                 this.tekocaOsebaId,
                 this.tocilnicaId,
                 this.appStartDatumUra,
@@ -683,6 +683,18 @@ public class Globals {
         vpisiKronologijo(serverUrl, token, mobileId, opisOperacije, osebaId, obratId);
     }
 
+    public void vpisiKronologijoDebugL2(String serverUrl, String token, String mobileId, String opisOperacije, Integer osebaId, Integer obratId) {
+        if (this.kronologIzklop) return;
+        if (!this.debugL2) return;
+        vpisiKronologijo(serverUrl, token, mobileId, opisOperacije, osebaId, obratId);
+    }
+
+    public void vpisiKronologijoDebugL2(String opisOperacije) {
+        if (this.kronologIzklop) return;
+        if (!this.debugL2) return;
+        vpisiKronologijo(opisOperacije);
+    }
+
     public void vpisiKronologijoDebugL0(String serverUrl, String token, String mobileId, String opisOperacije, Integer osebaId, Integer obratId) {
         if (this.kronologIzklop) return;
         if (!this.debugL0) return;
@@ -691,6 +703,30 @@ public class Globals {
 
     public void vpisiKronologijo(String opisOperacije) {
         vpisiKronologijo(this.serverUrl, this.token, String.valueOf(this.mobileId), opisOperacije, this.tekocaOsebaId, this.tocilnicaId);
+    }
+
+    /**
+     * Standardiziran vpis napake ali izjeme v kronologijo.
+     * Rezultat v OPIS_OPERACIJE se vedno začne z: "MAID:<MOBILE_ID> Napaka ..."
+     */
+    public void vpisiNapakoKronologija(String kontekst, Throwable t) {
+        String errText;
+        if (t == null) {
+            errText = "Neznana napaka";
+        } else {
+            String msg = t.getMessage();
+            errText = (msg != null && !msg.trim().isEmpty())
+                    ? (t.getClass().getSimpleName() + ": " + msg.trim())
+                    : t.getClass().getSimpleName();
+        }
+        vpisiNapakoKronologija(kontekst, errText);
+    }
+
+    public void vpisiNapakoKronologija(String kontekst, String sporocilo) {
+        String ctx = (kontekst != null && !kontekst.trim().isEmpty()) ? kontekst.trim() : "";
+        String msg = (sporocilo != null && !sporocilo.trim().isEmpty()) ? sporocilo.trim() : "Neznana napaka";
+        String opis = ctx.isEmpty() ? ("Napaka: " + msg) : ("Napaka " + ctx + ": " + msg);
+        vpisiKronologijo(opis);
     }
 
     public void vpisiKronologijoDebugL1(String opisOperacije) {

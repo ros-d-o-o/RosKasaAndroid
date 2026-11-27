@@ -241,6 +241,7 @@ public class NarocilaFragment extends Fragment {
                         consumePendingVoiceOrderIfAny();
                     });
                 } catch (Exception e) {
+                    Globals.getInstance().vpisiNapakoKronologija("Narocila loadInitialOrderData", e);
                     mainHandler.post(() -> {
                         enableEkran();
                         Toast.makeText(requireContext(), "Napaka pri nalaganju računa: " + e.getMessage(), Toast.LENGTH_LONG).show();
@@ -761,6 +762,7 @@ public class NarocilaFragment extends Fragment {
                 });
             } catch (Exception e) {
                 Log.e(TAG, "Napaka pri nalaganju cenika iz SOAP", e);
+                Globals.getInstance().vpisiNapakoKronologija("Narocila getCenik", e);
                 mainHandler.post(this::loadFallbackCenikItems);
             }
         });
@@ -1731,11 +1733,15 @@ public class NarocilaFragment extends Fragment {
         });
 
         binding.btnBrisanje.setOnClickListener(v -> {
+            int rId = currentRacun != null ? currentRacun.getRacunId() : 0;
+            Globals.getInstance().vpisiKronologijoDebugL1("BrisanjePostavke sproženo R:" + rId);
             if (isRacunZaklenjen()) {
+                Globals.getInstance().vpisiKronologijoDebugL1("BrisanjePostavke BLOKIRANO R:" + rId + " razlog=račun zaklenjen");
                 Toast.makeText(requireContext(), "Račun je zaključen! Brisanje postavk ni dovoljeno.", Toast.LENGTH_LONG).show();
                 return;
             }
             if (orderItems.isEmpty()) {
+                Globals.getInstance().vpisiKronologijoDebugL1("BrisanjePostavke BLOKIRANO R:" + rId + " razlog=ni postavk");
                 Toast.makeText(requireContext(), "Naročilo nima postavk za brisanje.", Toast.LENGTH_SHORT).show();
                 return;
             }
@@ -1748,10 +1754,16 @@ public class NarocilaFragment extends Fragment {
             NarociloItem itemToDelete = orderItems.get(selPos);
             if (itemToDelete.getPozicijaId() > 0) {
                 if (!Globals.getInstance().isStornoPoslanegaNarocilaDovoljen()) {
+                    Globals.getInstance().vpisiKronologijoDebugL1("BrisanjePostavke BLOKIRANO R:" + rId
+                            + " pozId=" + itemToDelete.getPozicijaId() + " artikel=" + itemToDelete.getNaziv()
+                            + " razlog=ni pravice SStorniraPoslanoNarocilo");
                     Toast.makeText(requireContext(), "Nimate pravice za storniranje že poslanega artikla!", Toast.LENGTH_SHORT).show();
                     return;
                 }
             }
+            Globals.getInstance().vpisiKronologijoDebugL1("BrisanjePostavke izvedeno R:" + rId
+                    + " pozId=" + itemToDelete.getPozicijaId() + " nivo4=" + itemToDelete.getNivo4Id()
+                    + " artikel=" + itemToDelete.getNaziv());
 
             NarociloItem removed = orderItems.remove(selPos);
             if (currentRacun != null && currentRacun.getRacPozic() != null) {
@@ -3164,6 +3176,7 @@ public class NarocilaFragment extends Fragment {
             } catch (VersionConflictException vce) {
                 mainHandler.post(() -> handleVersionConflict(vce));
             } catch (Exception e) {
+                Globals.getInstance().vpisiNapakoKronologija("Narocila hitro placilo", e);
                 mainHandler.post(() -> {
                     enableEkran();
                     if (currentRacun != null && currentRacun.getRacPlaci() != null) {

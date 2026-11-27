@@ -28,6 +28,17 @@ public class MainActivity extends AppCompatActivity {
         g.initContext(getApplicationContext());
         g.markAppStartupBegin(this);
 
+        // Globalni UncaughtExceptionHandler -> ob sesutju zapiše "MAID:<ID> Napaka UNCAUGHT ..." na disk / v kronologijo
+        final Thread.UncaughtExceptionHandler previousHandler = Thread.getDefaultUncaughtExceptionHandler();
+        Thread.setDefaultUncaughtExceptionHandler((thread, throwable) -> {
+            try {
+                Globals.getInstance().vpisiNapakoKronologija("UNCAUGHT " + (thread != null ? thread.getName() : ""), throwable);
+            } catch (Throwable ignored) {}
+            if (previousHandler != null) {
+                previousHandler.uncaughtException(thread, throwable);
+            }
+        });
+
         setContentView(R.layout.activity_main);
 
         // Android 15 / 16 (Pixel 9, targetSdk 36) edge-to-edge zaščita:

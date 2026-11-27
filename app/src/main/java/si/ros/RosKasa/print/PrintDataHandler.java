@@ -83,8 +83,9 @@ public class PrintDataHandler {
                 RacunPrintBuilder.ReceiptResult firstRacResult = RacunPrintBuilder.buildReceipt(racun, globals, firstKopijaOznaka, printData);
                 String textPreviewZaServer = firstRacResult.getTextPreview();
 
-                // RACIZPISAN se MORA zapisati na strežnik neodvisno od stanja Bluetooth tiskalnika!
-                BluetoothPrintHelper.sendRacIzpisanNaServer(context, racun, textPreviewZaServer, zaPrintKopij);
+                // RACIZPISAN + posodobitev STKOPIJ (konStKopij = zacStKopij + zaPrintKopij) se MORA zapisati na strežnik neodvisno od stanja Bluetooth tiskalnika!
+                int konStKopij = printData.getKonStKopij();
+                BluetoothPrintHelper.sendRacIzpisanNaServer(context, racun, textPreviewZaServer, konStKopij);
 
                 // 2. PREVERJANJE BLUETOOTH DOVOLJENJ (s prikazom sistemskega dialoga, če manjkajo)
                 if (!BluetoothPrintHelper.hasBluetoothPermissions(context)) {
@@ -617,7 +618,7 @@ public class PrintDataHandler {
     }
 
     private static void postError(BluetoothPrintHelper.OnPrintListener listener, String errorMsg) {
-        Globals.getInstance().vpisiKronologijo("PrintDataHandler NAPAKA: " + errorMsg);
+        Globals.getInstance().vpisiNapakoKronologija("Tiskanje", errorMsg);
         mainHandler.post(() -> {
             if (listener != null) listener.onError(errorMsg);
         });

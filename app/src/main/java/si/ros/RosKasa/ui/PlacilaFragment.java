@@ -133,7 +133,7 @@ public class PlacilaFragment extends Fragment {
                 for (PlaciloTp pl : currentRacun.getRacPlaci()) {
                     if (pl != null && !pl.isRowDeleted()) {
                         String nacin = getPaymentName(pl.getPlaciloId());
-                        BigDecimal amt = (pl.getDelniZnesek() != null && pl.getDelniZnesek().compareTo(BigDecimal.ZERO) > 0)
+                        BigDecimal amt = (pl.getDelniZnesek() != null && pl.getDelniZnesek().compareTo(BigDecimal.ZERO) != 0)
                                 ? pl.getDelniZnesek()
                                 : (pl.getZnesek() != null ? pl.getZnesek() : BigDecimal.ZERO);
                         placilaItems.add(new NarociloItem(nacin, amt, 1.0));
@@ -318,12 +318,19 @@ public class PlacilaFragment extends Fragment {
                                 final String stKarticeOpis, final Integer gostPrijavaId, final Integer hisCenikAi,
                                 final Integer partnerId, final String nazivPartner, final String naslovPartner,
                                 final String davcnaSt, final String stNaroc, final Integer overrideFiskalizacija) {
+        int rId = currentRacun != null ? currentRacun.getRacunId() : 0;
+        Globals.getInstance().vpisiKronologijoDebugL1("IzbiraPlacila sprožena R:" + rId
+                + " placiloId=" + placiloId + " nacin=" + nacin + " znesek=" + znesek);
         if (currentRacun == null) {
+            Globals.getInstance().vpisiKronologijoDebugL1("IzbiraPlacila BLOKIRANA razlog=currentRacun je null");
             Toast.makeText(requireContext(), "Ni odprtega računa!", Toast.LENGTH_SHORT).show();
             return;
         }
 
-        if (znesek == null || znesek.compareTo(BigDecimal.ZERO) <= 0) {
+        boolean isStornoRacun = (currentRacun.getStornoRacunId() != null && currentRacun.getStornoRacunId() > 0)
+                || (currentRacun.getZnesek() != null && currentRacun.getZnesek().compareTo(BigDecimal.ZERO) < 0);
+        if (znesek == null || (!isStornoRacun && znesek.compareTo(BigDecimal.ZERO) <= 0) || (isStornoRacun && znesek.compareTo(BigDecimal.ZERO) == 0)) {
+            Globals.getInstance().vpisiKronologijoDebugL1("IzbiraPlacila BLOKIRANA R:" + rId + " razlog=znesek=" + znesek + " (račun pokrit)");
             Toast.makeText(requireContext(), "Račun je že v celoti pokrit!", Toast.LENGTH_SHORT).show();
             return;
         }
@@ -1612,7 +1619,7 @@ public class PlacilaFragment extends Fragment {
 
             final PlaciloTp placiloZaBrisanje = zadnje;
             String nacin = getPaymentName(placiloZaBrisanje.getPlaciloId());
-            BigDecimal zn = (placiloZaBrisanje.getDelniZnesek() != null && placiloZaBrisanje.getDelniZnesek().compareTo(BigDecimal.ZERO) > 0)
+            BigDecimal zn = (placiloZaBrisanje.getDelniZnesek() != null && placiloZaBrisanje.getDelniZnesek().compareTo(BigDecimal.ZERO) != 0)
                     ? placiloZaBrisanje.getDelniZnesek()
                     : (placiloZaBrisanje.getZnesek() != null ? placiloZaBrisanje.getZnesek() : BigDecimal.ZERO);
 
@@ -2527,14 +2534,29 @@ public class PlacilaFragment extends Fragment {
 
     private void handleIzpisRacuna() {
         if (currentRacun == null) {
+            Globals.getInstance().vpisiKronologijoDebugL1("IzpisRacuna BLOKIRAN (Placila) razlog=currentRacun je null");
             Toast.makeText(requireContext(), "Ni aktivnega računa za izpis!", Toast.LENGTH_SHORT).show();
             return;
         }
 
         currentRacun.preracunajVsote();
+        boolean isStornoRacun = (currentRacun.getStornoRacunId() != null && currentRacun.getStornoRacunId() > 0)
+                || (currentRacun.getZnesek() != null && currentRacun.getZnesek().compareTo(BigDecimal.ZERO) < 0);
 
-        if (currentRacun.getPlacano().compareTo(currentRacun.getZnesek()) < 0) {
+        Globals.getInstance().vpisiKronologijoDebugL1("IzpisRacuna sprožen (Placila) R:" + currentRacun.getRacunId()
+                + " status=" + currentRacun.getStatus()
+                + " zn=" + currentRacun.getZnesek()
+                + " pl=" + currentRacun.getPlacano()
+                + " storno=" + isStornoRacun);
+
+        boolean premaloPlacano = isStornoRacun
+                ? (currentRacun.getPlacano().abs().compareTo(currentRacun.getZnesek().abs()) < 0)
+                : (currentRacun.getPlacano().compareTo(currentRacun.getZnesek()) < 0);
+
+        if (premaloPlacano) {
             String opozorilo = String.format(Locale.getDefault(), "Račun ni v celoti plačan!\nZnesek: %.2f €  |  Plačano: %.2f €", currentRacun.getZnesek(), currentRacun.getPlacano());
+            Globals.getInstance().vpisiKronologijoDebugL1("IzpisRacuna BLOKIRAN (Placila) R:" + currentRacun.getRacunId()
+                    + " razlog=ni v celoti plačan zn=" + currentRacun.getZnesek() + " pl=" + currentRacun.getPlacano());
             Toast.makeText(requireContext(), opozorilo, Toast.LENGTH_LONG).show();
             return;
         }
@@ -2552,38 +2574,48 @@ public class PlacilaFragment extends Fragment {
                 int mobileId = 1;
                 try { mobileId = Integer.parseInt(prefs.getMobileId()); } catch (Exception ignored) {}
 
-                // Določitev fiskalizacije glede na vnešena plačila (NACPLAC.FISKALNO)
-                boolean imaFiskalnoPlacilo = false;
-                if (currentRacun.getRacPlaci() != null) {
-                    for (PlaciloTp pl : currentRacun.getRacPlaci()) {
-                        if (pl != null && !pl.isRowDeleted() && pl.getPlaciloId() != 99) {
-                            NacPlacTp np = Globals.getInstance().getPlaciloById(pl.getPlaciloId());
-                            if (np != null && np.getFiskalno() != null && np.getFiskalno() == 1) {
-                                imaFiskalnoPlacilo = true;
-                                break;
+                GetRacunRsTp response;
+                if (currentRacun.isZeFiskaliziran()) {
+                    // Račun je ŽE fiskaliziran (npr. nedokončan storno po napaki tiskalnika):
+                    // spremeni se sme IZKLJUČNO STATUS=2 in STKOPIJ brez pošiljanja pozicij/plačil!
+                    int stKopij = Math.max(1, currentRacun.getStKopij() != null ? currentRacun.getStKopij() : 1);
+                    response = RosKasaSoapClient.setRacunStatusOnly(serverUrl, token, mobileId, currentRacun, 2, stKopij);
+                    currentRacun.setStatus(2);
+                    currentRacun.setStKopij(stKopij);
+                } else {
+                    // Določitev fiskalizacije glede na vnešena plačila (NACPLAC.FISKALNO)
+                    boolean imaFiskalnoPlacilo = false;
+                    if (currentRacun.getRacPlaci() != null) {
+                        for (PlaciloTp pl : currentRacun.getRacPlaci()) {
+                            if (pl != null && !pl.isRowDeleted() && pl.getPlaciloId() != 99) {
+                                NacPlacTp np = Globals.getInstance().getPlaciloById(pl.getPlaciloId());
+                                if (np != null && np.getFiskalno() != null && np.getFiskalno() == 1) {
+                                    imaFiskalnoPlacilo = true;
+                                    break;
+                                }
                             }
                         }
                     }
-                }
-                if (imaFiskalnoPlacilo) {
-                    currentRacun.setFiskalizacija(1);
-                } else {
-                    currentRacun.setFiskalizacija(null); // Todo.md pravilo: Update FISKALIZACIJA je samo za FISKALIZACIJA=1 drugače je null
-                }
-
-                // STATUS = 2 pomeni izpisan / fiskaliziran račun
-                currentRacun.setStatus(2);
-                currentRacun.setMarker(activeMarker);
-                currentRacun.setfPosId(prefs.getfPosId() > 0 ? prefs.getfPosId() : (Globals.getInstance().getfPosId() != null && Globals.getInstance().getfPosId() > 0 ? Globals.getInstance().getfPosId() : 0));
-                currentRacun.setfPoslovniProstorId(Globals.getInstance().getfPoslovniProstorId() != null && Globals.getInstance().getfPoslovniProstorId() > 0 ? Globals.getInstance().getfPoslovniProstorId() : 0);
-                if (currentRacun.getRacPozic() != null) {
-                    for (PozicijaTp p : currentRacun.getRacPozic()) {
-                        if (p != null) p.setNeNarocaj(true);
+                    if (imaFiskalnoPlacilo) {
+                        currentRacun.setFiskalizacija(1);
+                    } else {
+                        currentRacun.setFiskalizacija(null); // Todo.md pravilo: Update FISKALIZACIJA je samo za FISKALIZACIJA=1 drugače je null
                     }
-                }
 
-                // Klic setRacun za zaključek
-                GetRacunRsTp response = RosKasaSoapClient.setRacun(serverUrl, token, mobileId, currentRacun);
+                    // STATUS = 2 pomeni izpisan / fiskaliziran račun
+                    currentRacun.setStatus(2);
+                    currentRacun.setMarker(activeMarker);
+                    currentRacun.setfPosId(prefs.getfPosId() > 0 ? prefs.getfPosId() : (Globals.getInstance().getfPosId() != null && Globals.getInstance().getfPosId() > 0 ? Globals.getInstance().getfPosId() : 0));
+                    currentRacun.setfPoslovniProstorId(Globals.getInstance().getfPoslovniProstorId() != null && Globals.getInstance().getfPoslovniProstorId() > 0 ? Globals.getInstance().getfPoslovniProstorId() : 0);
+                    if (currentRacun.getRacPozic() != null) {
+                        for (PozicijaTp p : currentRacun.getRacPozic()) {
+                            if (p != null) p.setNeNarocaj(true);
+                        }
+                    }
+
+                    // Klic setRacun za zaključek
+                    response = RosKasaSoapClient.setRacun(serverUrl, token, mobileId, currentRacun);
+                }
 
                 RacunTp racunZaTisk = currentRacun;
                 if (response != null && response.getRacGlava() != null) {

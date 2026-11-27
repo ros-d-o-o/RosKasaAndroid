@@ -227,6 +227,7 @@ public class PaytenPaymentService {
             return root.toString();
         } catch (Exception e) {
             Log.e(TAG, "Napaka pri sestavi JSON za PayTen: " + e.getMessage(), e);
+            si.ros.RosKasa.Globals.getInstance().vpisiNapakoKronologija("PayTen JSON", e);
             return "{}";
         }
     }

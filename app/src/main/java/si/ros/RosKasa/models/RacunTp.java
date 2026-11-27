@@ -217,10 +217,20 @@ public class RacunTp {
     public BigDecimal getPlacano() { return placano != null ? placano : BigDecimal.ZERO; }
     public void setPlacano(BigDecimal placano) { this.placano = placano != null ? placano : BigDecimal.ZERO; }
 
+    public boolean isZeFiskaliziran() {
+        return (fOznakaDu != null && !fOznakaDu.trim().isEmpty())
+                || (fPodpis != null && !fPodpis.trim().isEmpty())
+                || (fStevilkaRacuna != null && fStevilkaRacuna > 0);
+    }
+
     public boolean isPlacan() {
         if (status == 2) return true;
-        if (znesek != null && placano != null && znesek.compareTo(BigDecimal.ZERO) > 0) {
-            return placano.compareTo(znesek) >= 0;
+        if (znesek != null && placano != null) {
+            if (znesek.compareTo(BigDecimal.ZERO) > 0) {
+                return placano.compareTo(znesek) >= 0;
+            } else if (znesek.compareTo(BigDecimal.ZERO) < 0) {
+                return placano.compareTo(znesek) <= 0;
+            }
         }
         return false;
     }

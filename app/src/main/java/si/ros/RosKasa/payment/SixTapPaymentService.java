@@ -197,6 +197,7 @@ public class SixTapPaymentService {
             return json.toString();
         } catch (Exception e) {
             Log.e(TAG, "Napaka pri sestavi WPI JSON: " + e.getMessage(), e);
+            si.ros.RosKasa.Globals.getInstance().vpisiNapakoKronologija("SixTap WPI JSON", e);
             return "{}";
         }
     }

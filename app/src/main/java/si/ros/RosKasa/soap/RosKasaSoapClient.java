@@ -74,6 +74,10 @@ public class RosKasaSoapClient {
         Globals.getInstance().vpisiKronologijo(serverUrl, token, mobileId, opisOperacije, osebaId, obratId);
     }
 
+    public static void vpisKronologijeDebugL2Async(String serverUrl, String token, String mobileId, String opisOperacije, Integer osebaId, Integer obratId) {
+        Globals.getInstance().vpisiKronologijoDebugL2(serverUrl, token, mobileId, opisOperacije, osebaId, obratId);
+    }
+
     public static void vpisKronologijeAsyncDirect(String serverUrl, String token, String mobileId, String opisOperacije, Integer osebaId, Integer obratId) {
         vpisKronologijeAsyncDirect(serverUrl, token, mobileId, opisOperacije, osebaId, obratId, null);
     }
@@ -355,7 +359,7 @@ public class RosKasaSoapClient {
 
             String opis = "Klic getAppConfig (PRINTER_RACUNI='" + Globals.getInstance().getPrinterRacuni() + "', TIPKE_POS_ID=" + setup.getTipkePosId() + ", HIS_OBRAT=" + setup.getHisObrat() + ") -> uspeh.";
             int obratId = (setup.getTocilnicaId() != null && setup.getTocilnicaId() > 0) ? setup.getTocilnicaId() : setup.getHisObrat();
-            vpisKronologijeAsync(serverUrl, token, String.valueOf(finalMobId), opis, 0, obratId);
+            vpisKronologijeDebugL2Async(serverUrl, token, String.valueOf(finalMobId), opis, 0, obratId);
 
         } catch (Exception e) {
             String msg = (e != null && e.getMessage() != null) ? e.getMessage() : (e != null ? e.toString() : "Neznana napaka");
@@ -667,7 +671,7 @@ public class RosKasaSoapClient {
             }
 
             String opis = "Klic getCenik (stroskovnoId=" + stroskovnoId + ") -> USPEH. Naloženih artiklov: " + list.size();
-            vpisKronologijeAsync(serverUrl, token, "", opis, 0, 0);
+            vpisKronologijeDebugL2Async(serverUrl, token, "", opis, 0, 0);
 
         } catch (Exception e) {
             String msg = (e != null && e.getMessage() != null) ? e.getMessage() : (e != null ? e.toString() : "Neznana napaka");
@@ -920,7 +924,7 @@ public class RosKasaSoapClient {
 
             Globals.getInstance().setCachedDodatki(result);
             String opis = "Klic getDodatki -> USPEH. Naloženih dodatkov/opomb: " + result.size();
-            vpisKronologijeAsync(serverUrl, token, "", opis, 0, 0);
+            vpisKronologijeDebugL2Async(serverUrl, token, "", opis, 0, 0);
 
         } catch (Exception e) {
             String msg = (e != null && e.getMessage() != null) ? e.getMessage() : (e != null ? e.toString() : "Neznana napaka");
@@ -980,7 +984,7 @@ public class RosKasaSoapClient {
             }
 
             String opis = "Klic getNacPlac2 (mobileId=" + mobileId + ") -> USPEH. Naloženih plačil: " + result.size();
-            vpisKronologijeAsync(serverUrl, token, String.valueOf(mobileId), opis, 0, 0);
+            vpisKronologijeDebugL2Async(serverUrl, token, String.valueOf(mobileId), opis, 0, 0);
 
         } catch (Exception e) {
             Log.w(TAG, "getNacPlac2 ni uspel, poskus z getNacPlac fallback: " + e.getMessage());
@@ -1290,7 +1294,7 @@ public class RosKasaSoapClient {
             }
 
             String opis = "Klic getRacuniSeznam (STATUS=" + status + ", OD_DATUM=" + odDatum + ") -> pridobljeno " + list.size() + " računov.";
-            vpisKronologijeAsync(serverUrl, token, mobileId, opis, 0, 0);
+            vpisKronologijeDebugL2Async(serverUrl, token, mobileId, opis, 0, 0);
 
         } catch (Exception e) {
             String msg = (e != null && e.getMessage() != null) ? e.getMessage() : (e != null ? e.toString() : "Neznana napaka");
@@ -2936,7 +2940,7 @@ public class RosKasaSoapClient {
             }
 
             String opis = "Klic getHitreTipke (stroskovnoId=" + stroskovnoId + ") -> pridobljeno " + list.size() + " hitrih tipk.";
-            vpisKronologijeAsync(serverUrl, token, "", opis, 0, 0);
+            vpisKronologijeDebugL2Async(serverUrl, token, "", opis, 0, 0);
 
         } catch (Exception e) {
             String msg = (e != null && e.getMessage() != null) ? e.getMessage() : (e != null ? e.toString() : "Neznana napaka");
@@ -3258,6 +3262,10 @@ public class RosKasaSoapClient {
     private static void notifyError(String method, String errorMsg) {
         if (errorMsg == null) errorMsg = "Neznana napaka (null)";
         final String finalMsg = errorMsg;
+        // Centralni vpis SOAP napak v kronologijo kot "MAID:<ID> Napaka SOAP ..." (brez rekurzije za vpisKronologije)
+        if (method == null || !method.toLowerCase(Locale.US).contains("kronolog")) {
+            Globals.getInstance().vpisiNapakoKronologija("SOAP " + (method != null ? method : ""), finalMsg);
+        }
         if (errorListener != null) {
             mainHandler.post(() -> errorListener.onError(method, finalMsg));
         }
@@ -3477,7 +3485,7 @@ public class RosKasaSoapClient {
             }
 
             String opis = "Klic getRacuni (RACUN_ID=" + racunId + ") -> " + (racun != null ? "Naložen račun V=" + racun.getVerzijaZapisa() + " Pozicij=" + (racun.getRacPozic() != null ? racun.getRacPozic().size() : 0) : "Ni podatkov");
-            vpisKronologijeAsync(serverUrl, token, "", opis, 0, 0);
+            vpisKronologijeDebugL2Async(serverUrl, token, "", opis, 0, 0);
 
         } catch (Exception e) {
             String msg = (e != null && e.getMessage() != null) ? e.getMessage() : (e != null ? e.toString() : "Neznana napaka");
@@ -3583,6 +3591,66 @@ public class RosKasaSoapClient {
         return result;
     }
 
+    /**
+     * Za ŽE fiskaliziran račun (F_OZNAKA_DU / F_PODPIS / F_STEVILKA_RACUNA je že določen)
+     * pošlje VSE podatke (glavo + RACPOZIC + RACPLACI) popolnoma enake originalu
+     * (tudi poz.__OriginalObject == poz in pl.__OriginalObject == pl),
+     * spremeni pa IZKLJUČNO STATUS in STKOPIJ.
+     */
+    public static GetRacunRsTp setRacunStatusOnly(String serverUrl, String token, int mobileId,
+                                                  RacunTp racun, int newStatus, int newStKopij) throws Exception {
+        if (racun == null) throw new Exception("Racun je null");
+        RacunTp base = (racun.getOriginalObject() != null) ? racun.getOriginalObject().deepCopy() : racun.deepCopy();
+        base.setOriginalObject(null);
+        // Zagotovi, da sta RACPOZIC in RACPLACI prisotna in 100% enaka svojemu __OriginalObject (brez diffa na detajlih!)
+        if ((base.getRacPozic() == null || base.getRacPozic().isEmpty()) && racun.getRacPozic() != null) {
+            List<PozicijaTp> origPoz = new ArrayList<>();
+            for (PozicijaTp p : racun.getRacPozic()) {
+                if (p != null) {
+                    PozicijaTp src = (p.getOriginalObject() != null) ? p.getOriginalObject().deepCopy() : p.deepCopy();
+                    src.setOriginalObject(null);
+                    origPoz.add(src);
+                }
+            }
+            base.setRacPozic(origPoz);
+        }
+        if ((base.getRacPlaci() == null || base.getRacPlaci().isEmpty()) && racun.getRacPlaci() != null) {
+            List<PlaciloTp> origPl = new ArrayList<>();
+            for (PlaciloTp pl : racun.getRacPlaci()) {
+                if (pl != null) {
+                    PlaciloTp src = (pl.getOriginalObject() != null) ? pl.getOriginalObject().deepCopy() : pl.deepCopy();
+                    src.setOriginalObject(null);
+                    origPl.add(src);
+                }
+            }
+            base.setRacPlaci(origPl);
+        }
+
+        RacunTp updated = base.deepCopy();
+        if (updated.getRacPozic() != null) {
+            for (PozicijaTp p : updated.getRacPozic()) {
+                if (p != null) {
+                    PozicijaTp pOrig = p.deepCopy();
+                    pOrig.setOriginalObject(null);
+                    p.setOriginalObject(pOrig);
+                }
+            }
+        }
+        if (updated.getRacPlaci() != null) {
+            for (PlaciloTp pl : updated.getRacPlaci()) {
+                if (pl != null) {
+                    PlaciloTp plOrig = pl.deepCopy();
+                    plOrig.setOriginalObject(null);
+                    pl.setOriginalObject(plOrig);
+                }
+            }
+        }
+        updated.setStatus(newStatus);
+        updated.setStKopij(newStKopij);
+        updated.setOriginalObject(base);
+        return setRacun(serverUrl, token, mobileId, updated);
+    }
+
     private static SoapObject buildSoapRacunTp(RacunTp racun, int depth) {
         SoapObject soap = new SoapObject(NAMESPACE, "RacunTp");
         int racunId = racun.getRacunId();
@@ -3664,15 +3732,16 @@ public class RosKasaSoapClient {
             requestPropertySafe(soap, "RACPLACI", racPlaciSoap);
         }
 
-        // RACPOZIC - po RACPLACI in pred RACUN_ID po WSDL shemi
-        if (racun.getRacPozic() != null) {
+        // RACPOZIC - po RACPLACI in pred RACUN_ID po WSDL shemi (ne pošiljaj praznega niza pri status-only posodobitvi!)
+        boolean includePozOrig = racun.isZeFiskaliziran();
+        if (racun.getRacPozic() != null && !racun.getRacPozic().isEmpty()) {
             SoapObject racPozicSoap = new SoapObject(NAMESPACE, "ArrayOfPozicijaTp");
             int negIdx = -1;
             for (int i = 0; i < racun.getRacPozic().size(); i++) {
                 PozicijaTp poz = racun.getRacPozic().get(i);
                 if (poz != null) {
                     int defaultPozId = (poz.getPozicijaId() != 0) ? poz.getPozicijaId() : (negIdx--);
-                    racPozicSoap.addProperty("PozicijaTp", buildSoapPozicijaTp(poz, racunId, defaultPozId, depth));
+                    racPozicSoap.addProperty("PozicijaTp", buildSoapPozicijaTp(poz, racunId, defaultPozId, depth, includePozOrig));
                 }
             }
             requestPropertySafe(soap, "RACPOZIC", racPozicSoap);
@@ -3764,7 +3833,7 @@ public class RosKasaSoapClient {
         }
     }
 
-    private static SoapObject buildSoapPozicijaTp(PozicijaTp poz, int parentRacunId, int defaultPozId, int depth) {
+    private static SoapObject buildSoapPozicijaTp(PozicijaTp poz, int parentRacunId, int defaultPozId, int depth, boolean includeOriginalObject) {
         SoapObject soap = new SoapObject(NAMESPACE, "PozicijaTp");
 
         int pozId = poz.getPozicijaId() != 0 ? poz.getPozicijaId() : defaultPozId;
@@ -3885,8 +3954,11 @@ public class RosKasaSoapClient {
             soap.addProperty("DODATNI_OPIS", poz.getDodatniOpis().length() > 240 ? poz.getDodatniOpis().substring(0, 240) : poz.getDodatniOpis());
         }
 
-        // Delphi referenca (DataGisOrder.pas:3662) nikoli ne pošilja __OriginalObject na PozicijaTp
-        // (vedno je nil). Pošiljanje __OriginalObject povzroči napako strežnika "race racpozic".
+        // Za že fiskalizirane račune (F_OZNAKA_DU != null) strežnik primerja PozicijaTp proti __OriginalObject
+        // (če je __OriginalObject null, javi "F_OZNAKA_DU: detail POZIC:...").
+        if (includeOriginalObject && depth == 0 && poz.getOriginalObject() != null) {
+            soap.addProperty("__OriginalObject", buildSoapPozicijaTp(poz.getOriginalObject(), parentRacunId, defaultPozId, depth + 1, false));
+        }
 
         return soap;
     }

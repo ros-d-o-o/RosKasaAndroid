@@ -174,28 +174,35 @@ public class BluetoothPrintHelper {
                         "RacIzpisanNaServer ws post USPEH R:" + racun.getRacunId(),
                         osebaId, tocilnicaId);
 
-                // Vedno ko izpišemo račun, ki ima status=1, ga postavimo v status=2 (Delphi uPrintData.pas:856-871)
-                if (racun.getStatus() == 1) {
+                // Posodobi STATUS (1 -> 2) in/ali STKOPIJ (+1 za 1 kopijo, +2 za 2 kopiji...) na strežniku
+                int oldStKopij = racun.getStKopij() != null ? racun.getStKopij() : 0;
+                int konStKopij = stKopij > 0 ? stKopij : (oldStKopij + 1);
+                int targetStatus = (racun.getStatus() <= 1) ? 2 : racun.getStatus();
+                boolean needsServerUpdate = (racun.getStatus() <= 1) || (konStKopij > oldStKopij);
+                if (needsServerUpdate && racun.getRacunId() > 0) {
                     try {
-                        racun.setStatus(2);
-                        int konStKopij = stKopij > 0 ? stKopij : (racun.getStKopij() != null && racun.getStKopij() > 0 ? racun.getStKopij() : 1);
-                        racun.setStKopij(konStKopij);
                         int mobileId = 0;
                         try {
                             mobileId = Integer.parseInt(prefs.getMobileId());
                         } catch (Exception ignored) {}
 
-                        si.ros.RosKasa.soap.RosKasaSoapClient.setRacun(serverUrl, token, mobileId, racun);
-                        Log.d(TAG, "UpdateInvoiceStatus: račun R:" + racun.getRacunId() + " uspešno postavljen na status 2 (STKOPIJ=" + konStKopij + ")");
+                        si.ros.RosKasa.models.GetRacunRsTp rs = si.ros.RosKasa.soap.RosKasaSoapClient.setRacunStatusOnly(
+                                serverUrl, token, mobileId, racun, targetStatus, konStKopij
+                        );
+                        racun.setStatus(targetStatus);
+                        racun.setStKopij(konStKopij);
+                        if (rs != null && rs.getRacGlava() != null) {
+                            racun.setVerzijaZapisa(rs.getRacGlava().getVerzijaZapisa());
+                            racun.setOriginalObject(rs.getRacGlava().deepCopy());
+                        }
+                        Log.d(TAG, "UpdateInvoiceStatus: račun R:" + racun.getRacunId() + " status=" + targetStatus + " STKOPIJ=" + konStKopij);
 
                         g.vpisiKronologijoDebugL1(serverUrl, token, prefs.getMobileId(),
-                                "UpdateInvoiceStatus R:" + racun.getRacunId() + " na status 2 STKOPIJ:" + konStKopij,
+                                "UpdateInvoiceStatus R:" + racun.getRacunId() + " status=" + targetStatus + " STKOPIJ:" + konStKopij,
                                 g.getTekocaOsebaId(), g.getTocilnicaId());
                     } catch (Exception exStatus) {
-                        Log.e(TAG, "Napaka pri UpdateInvoiceStatus na status 2 za R:" + racun.getRacunId() + ": " + exStatus.getMessage(), exStatus);
-                        g.vpisiKronologijoDebugL1(serverUrl, token, prefs.getMobileId(),
-                                "Napaka UpdateInvoiceStatus za R:" + racun.getRacunId() + " " + exStatus.getMessage(),
-                                g.getTekocaOsebaId(), g.getTocilnicaId());
+                        Log.e(TAG, "Napaka pri UpdateInvoiceStatus za R:" + racun.getRacunId() + ": " + exStatus.getMessage(), exStatus);
+                        g.vpisiNapakoKronologija("UpdateInvoiceStatus R:" + racun.getRacunId(), exStatus);
                     }
                 }
             } catch (Exception e) {
@@ -381,7 +388,7 @@ public class BluetoothPrintHelper {
     }
 
     private static void postError(OnPrintListener listener, String errorMsg) {
-        Globals.getInstance().vpisiKronologijo("Bluetooth test tiskanja NAPAKA: " + errorMsg);
+        Globals.getInstance().vpisiNapakoKronologija("Bluetooth tiskanje", errorMsg);
         mainHandler.post(() -> {
             if (listener != null) listener.onError(errorMsg);
         });

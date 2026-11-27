@@ -150,6 +150,7 @@ public class VoiceOrderController {
 
             @Override
             public void onError(String message) {
+                Globals.getInstance().vpisiKronologijo("Napaka AI_VOICE mikrofon: " + message);
                 mainHandler.post(() -> {
                     if (destroyed) return;
                     tvReply.setVisibility(View.VISIBLE);
@@ -236,6 +237,7 @@ public class VoiceOrderController {
     public void openAndStart() {
         Globals g = Globals.getInstance();
         if (g.getAiGeminiApiKey().isEmpty()) {
+            g.vpisiKronologijo("Napaka AI_VOICE: AI_GEMINI_API_KEY ni nastavljen v MOBINI");
             Toast.makeText(context, R.string.ai_err_no_api_key, Toast.LENGTH_LONG).show();
             return;
         }
@@ -323,6 +325,7 @@ public class VoiceOrderController {
         }
 
         if ("ERROR".equalsIgnoreCase(result.status)) {
+            Globals.getInstance().vpisiKronologijo("Napaka AI_VOICE Gemini: " + result.errorMessage);
             tvReply.setVisibility(View.VISIBLE);
             tvReply.setText(context.getString(R.string.ai_err_network, result.errorMessage));
             updateStatusUi();
@@ -375,7 +378,7 @@ public class VoiceOrderController {
 
         if (added > 0 || modified > 0) {
             Globals.getInstance().vpisiKronologijo(
-                    "AI_VOICE miza=" + host.getCurrentMiza() + " dodano=" + added + " popravljeno=" + modified
+                    buildVoiceKronologijaOpis(host.getCurrentMiza(), result.addItems, result.modifyItems, added, modified)
             );
         }
 
@@ -471,6 +474,10 @@ public class VoiceOrderController {
                 );
                 int booked = host.onAiAddItems(Collections.singletonList(item));
                 if (booked > 0) {
+                    Globals.getInstance().vpisiKronologijo(
+                            buildVoiceKronologijaOpis(host.getCurrentMiza(), Collections.singletonList(item), null, booked, 0)
+                                    .replaceFirst("^AI_VOICE ", "AI_VOICE_TAP ")
+                    );
                     VoiceOrderSession sess = VoiceOrderSession.getInstance();
                     sess.addTurn("user", "Izbral sem z gumbom: " + sug.naziv + finalEpLabel);
                     sess.addTurn("model", "V redu, poknjižil sem " + sug.naziv + finalEpLabel
@@ -488,6 +495,55 @@ public class VoiceOrderController {
     private void clearSuggestions() {
         llSuggestions.removeAllViews();
         scrollSuggestions.setVisibility(View.GONE);
+    }
+
+    static String buildVoiceKronologijaOpis(
+            String miza,
+            List<VoiceOrderModels.AiOrderItem> addItems,
+            List<VoiceOrderModels.AiModifyItem> modItems,
+            int added,
+            int modified
+    ) {
+        StringBuilder sb = new StringBuilder();
+        sb.append("AI_VOICE miza=").append(miza != null ? miza : "");
+        if (added > 0 && addItems != null && !addItems.isEmpty()) {
+            sb.append(" +[");
+            boolean first = true;
+            for (VoiceOrderModels.AiOrderItem it : addItems) {
+                if (it == null) continue;
+                if (!first) sb.append("; ");
+                first = false;
+                sb.append(it.nivo4Id).append(" ").append(it.naziv)
+                        .append(" x").append(formatCompactNumber(it.kolicina));
+                if (it.ep > 0) sb.append(" ep=").append(formatCompactNumber(it.ep));
+                if (it.hod != null && !it.hod.isEmpty()) sb.append(" hod=").append(it.hod);
+                if (it.opomba != null && !it.opomba.isEmpty()) sb.append(" (").append(it.opomba).append(")");
+            }
+            sb.append("]");
+        }
+        if (modified > 0 && modItems != null && !modItems.isEmpty()) {
+            sb.append(" ~[");
+            boolean first = true;
+            for (VoiceOrderModels.AiModifyItem m : modItems) {
+                if (m == null) continue;
+                if (!first) sb.append("; ");
+                first = false;
+                sb.append(m.remove ? "DEL " : "MOD ")
+                        .append(m.matchNivo4Id).append(" ").append(m.matchNaziv);
+                if (!m.remove && m.novaKolicina > 0) sb.append(" kol=").append(formatCompactNumber(m.novaKolicina));
+                if (m.novNivo4Id > 0 || (m.novNaziv != null && !m.novNaziv.isEmpty())) {
+                    sb.append(" -> ").append(m.novNivo4Id).append(" ").append(m.novNaziv);
+                }
+                if (m.novaOpomba != null && !m.novaOpomba.isEmpty()) sb.append(" (").append(m.novaOpomba).append(")");
+            }
+            sb.append("]");
+        }
+        return sb.toString();
+    }
+
+    private static String formatCompactNumber(double val) {
+        if (val == (long) val) return String.valueOf((long) val);
+        return String.valueOf(val);
     }
 
     private void updateModeButtonUi() {

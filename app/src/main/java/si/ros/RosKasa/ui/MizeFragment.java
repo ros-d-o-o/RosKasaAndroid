@@ -258,6 +258,7 @@ public class MizeFragment extends Fragment {
                             Toast.LENGTH_LONG).show();
                 });
             } catch (Exception e) {
+                Globals.getInstance().vpisiKronologijo("Napaka osveževanja šifrantov: " + e.getMessage());
                 mainHandler.post(() -> {
                     if (!isAdded() || binding == null) return;
                     if (binding.layoutMizeLoading != null) {
@@ -443,6 +444,7 @@ public class MizeFragment extends Fragment {
                 });
             } catch (Exception e) {
                 Log.e(TAG, "Napaka pri nalaganju zasednosti miz iz getRacuniSeznam", e);
+                Globals.getInstance().vpisiNapakoKronologija("Mize getRacuniForMize", e);
                 mainHandler.post(() -> {
                     isLoadingTables = false;
                     if (binding != null && binding.layoutMizeLoading != null) {
@@ -500,12 +502,16 @@ public class MizeFragment extends Fragment {
     private void populateMizeGrid(List<RacunSeznamItem> openAccounts) {
         this.lastLoadedOpenAccounts = openAccounts != null ? openAccounts : new ArrayList<>();
 
-        // Filtriramo le aktivne odprte račune (STATUS == 1 ter brez stornacije)
+        // Filtriramo le aktivne odprte račune (STATUS == 1 ter brez stornacije / negativnega zneska)
         List<RacunSeznamItem> activeOpenAccounts = new ArrayList<>();
         if (openAccounts != null) {
             for (RacunSeznamItem acc : openAccounts) {
-                if (acc != null && acc.getStatus() != null && acc.getStatus() == 1
-                        && (acc.getStornoRacunId() == null || acc.getStornoRacunId() == 0)) {
+                boolean isStorno = acc != null && (
+                        (acc.getStornoRacunId() != null && acc.getStornoRacunId() > 0)
+                        || (acc.getStornoOriginal() != null && acc.getStornoOriginal() > 0)
+                        || (acc.getZnesek() != null && acc.getZnesek().compareTo(BigDecimal.ZERO) < 0)
+                );
+                if (acc != null && acc.getStatus() != null && acc.getStatus() == 1 && !isStorno) {
                     activeOpenAccounts.add(acc);
                 }
             }

@@ -168,16 +168,21 @@ public class RacuniFragment extends Fragment implements RacunSeznamAdapter.OnIte
         });
 
         binding.btnStorno.setOnClickListener(v -> {
+            RacunSeznamItem selected = adapter.getSelectedItem();
+            int selId = selected != null ? selected.getRacunId() : 0;
+            Globals.getInstance().vpisiKronologijoDebugL1("StornoRacuna sprožen (seznam) R:" + selId);
             if (!Globals.getInstance().isDovoljeno(PraviceConsts.SLahkoStorniraRacun)) {
+                Globals.getInstance().vpisiKronologijoDebugL1("StornoRacuna BLOKIRAN R:" + selId + " razlog=ni pravice SLahkoStorniraRacun");
                 Toast.makeText(requireContext(), "Nimate pravice za storno računa!", Toast.LENGTH_SHORT).show();
                 return;
             }
-            RacunSeznamItem selected = adapter.getSelectedItem();
             if (selected == null) {
+                Globals.getInstance().vpisiKronologijoDebugL1("StornoRacuna BLOKIRAN razlog=ni izbranega računa");
                 Toast.makeText(requireContext(), "Prosim izberite račun za storno!", Toast.LENGTH_SHORT).show();
                 return;
             }
             if (selected.getStatus() == null || (selected.getStatus() != 2 && selected.getStatus() != 4)) {
+                Globals.getInstance().vpisiKronologijoDebugL1("StornoRacuna BLOKIRAN R:" + selId + " razlog=status=" + selected.getStatus() + " (dovoljen le 2 ali 4)");
                 Toast.makeText(requireContext(), "Stornirati je mogoče le zaključene račune (status 2 ali status 4)!", Toast.LENGTH_SHORT).show();
                 return;
             }
@@ -199,6 +204,163 @@ public class RacuniFragment extends Fragment implements RacunSeznamAdapter.OnIte
                 return;
             }
             prikaziPredogledRacuna(selected);
+        });
+
+        binding.btnIzpisRacuna.setOnClickListener(v -> izvediIzpisIzbranegaRacuna());
+    }
+
+    /**
+     * Izpis izbranega računa neposredno iz seznama računov:
+     * - za STATUS == 1 dovoljen IZKLJUČNO, če je račun v celoti plačan (npr. nedokončan izpis / storno po napaki tiskalnika),
+     * - za STATUS >= 2 zahteva pravico SLahkoPonovnoIzpiseRacun in poveča STKOPIJ na strežniku.
+     */
+    private void izvediIzpisIzbranegaRacuna() {
+        RacunSeznamItem selected = adapter.getSelectedItem();
+        int selId = selected != null ? selected.getRacunId() : 0;
+        Globals.getInstance().vpisiKronologijoDebugL1("IzpisRacuna sprožen (seznam) R:" + selId);
+
+        if (selected == null) {
+            Globals.getInstance().vpisiKronologijoDebugL1("IzpisRacuna BLOKIRAN (seznam) razlog=ni izbranega računa");
+            Toast.makeText(requireContext(), "Prosim izberite račun za izpis!", Toast.LENGTH_SHORT).show();
+            return;
+        }
+
+        if (selected.getStatus() != null && selected.getStatus() >= 2
+                && !Globals.getInstance().isDovoljeno(PraviceConsts.SLahkoPonovnoIzpiseRacun)) {
+            Globals.getInstance().vpisiKronologijoDebugL1("IzpisRacuna BLOKIRAN (seznam) R:" + selId + " razlog=ni pravice SLahkoPonovnoIzpiseRacun");
+            Toast.makeText(requireContext(), "Nimate pravice za ponovni izpis računa!", Toast.LENGTH_LONG).show();
+            return;
+        }
+
+        binding.pbLoading.setVisibility(View.VISIBLE);
+        executor.execute(() -> {
+            try {
+                RacunTp r = RosKasaSoapClient.getRacun(prefs.getServerUrl(), prefs.getToken(), selected.getRacunId());
+                if (r == null) {
+                    Globals.getInstance().vpisiKronologijoDebugL1("IzpisRacuna BLOKIRAN (seznam) R:" + selId + " razlog=getRacun vrnil null");
+                    mainHandler.post(() -> {
+                        if (binding != null) binding.pbLoading.setVisibility(View.GONE);
+                        if (getContext() != null) {
+                            Toast.makeText(requireContext(), "Računa #" + selId + " ni bilo mogoče naložiti s strežnika.", Toast.LENGTH_LONG).show();
+                        }
+                    });
+                    return;
+                }
+
+                r.preracunajVsote();
+                if (r.getRacPozic() != null) {
+                    for (PozicijaTp p : r.getRacPozic()) {
+                        if (p != null && p.getNivo4Id() != null && p.getNivo4Id() > 0) {
+                            String lookup = Globals.getInstance().findNazivByNivo4Id(p.getNivo4Id());
+                            if (lookup != null && !lookup.trim().isEmpty()) {
+                                p.setNaziv(lookup.trim());
+                            }
+                        }
+                    }
+                }
+
+                RacunTp racunToPrint = r;
+                if (r.getStatus() == 1) {
+                    boolean isStorno = (r.getStornoRacunId() != null && r.getStornoRacunId() > 0)
+                            || (r.getZnesek() != null && r.getZnesek().compareTo(BigDecimal.ZERO) < 0);
+                    boolean premaloPlacano = isStorno
+                            ? (r.getPlacano().abs().compareTo(r.getZnesek().abs()) < 0)
+                            : (r.getPlacano().compareTo(r.getZnesek()) < 0);
+                    if (premaloPlacano) {
+                        Globals.getInstance().vpisiKronologijoDebugL1("IzpisRacuna BLOKIRAN (seznam) R:" + selId
+                                + " razlog=STATUS=1 ni v celoti plačan zn=" + r.getZnesek() + " pl=" + r.getPlacano());
+                        mainHandler.post(() -> {
+                            if (binding != null) binding.pbLoading.setVisibility(View.GONE);
+                            if (getContext() != null) {
+                                Toast.makeText(requireContext(),
+                                        String.format(Locale.getDefault(),
+                                                "Račun #%d ni v celoti plačan (Zn: %.2f € / Pl: %.2f €)!\nIzpis iz seznama je dovoljen le za v celoti plačane račune.",
+                                                selId, r.getZnesek(), r.getPlacano()),
+                                        Toast.LENGTH_LONG).show();
+                            }
+                        });
+                        return;
+                    }
+
+                    int mobileId = 0;
+                    try { mobileId = Integer.parseInt(prefs.getMobileId()); } catch (Exception ignored) {}
+                    si.ros.RosKasa.models.GetRacunRsTp resp;
+                    if (r.isZeFiskaliziran()) {
+                        int novaKop = Math.max(1, r.getStKopij() != null ? r.getStKopij() : 1);
+                        resp = RosKasaSoapClient.setRacunStatusOnly(prefs.getServerUrl(), prefs.getToken(), mobileId, r, 2, novaKop);
+                        r.setStatus(2);
+                        r.setStKopij(novaKop);
+                    } else {
+                        boolean imaFiskalno = false;
+                        if (r.getRacPlaci() != null) {
+                            for (PlaciloTp pl : r.getRacPlaci()) {
+                                if (pl != null && !pl.isRowDeleted() && pl.getPlaciloId() != 99) {
+                                    si.ros.RosKasa.models.NacPlacTp np = Globals.getInstance().getPlaciloById(pl.getPlaciloId());
+                                    if (np != null && np.getFiskalno() != null && np.getFiskalno() == 1) {
+                                        imaFiskalno = true;
+                                        break;
+                                    }
+                                }
+                            }
+                        }
+                        if (imaFiskalno) r.setFiskalizacija(1);
+                        if (r.getRacPozic() != null) {
+                            for (PozicijaTp p : r.getRacPozic()) {
+                                if (p != null) p.setNeNarocaj(true);
+                            }
+                        }
+                        r.setStatus(2);
+                        r.setStKopij(Math.max(1, r.getStKopij() != null ? r.getStKopij() : 1));
+                        resp = RosKasaSoapClient.setRacun(prefs.getServerUrl(), prefs.getToken(), mobileId, r);
+                    }
+                    if (resp != null && resp.getRacGlava() != null) {
+                        RacunTp returned = resp.getRacGlava();
+                        if ((returned.getRacPozic() == null || returned.getRacPozic().isEmpty()) && r.getRacPozic() != null) {
+                            returned.setRacPozic(r.getRacPozic());
+                        }
+                        if (returned.getRacPlaci() == null && r.getRacPlaci() != null) {
+                            returned.setRacPlaci(r.getRacPlaci());
+                        }
+                        if (returned.getFiskalizacija() == null && r.getFiskalizacija() != null) {
+                            returned.setFiskalizacija(r.getFiskalizacija());
+                        }
+                        racunToPrint = returned;
+                    }
+                }
+
+                final RacunTp finalToPrint = racunToPrint;
+                mainHandler.post(() -> {
+                    if (binding != null) binding.pbLoading.setVisibility(View.GONE);
+                    if (getContext() == null) return;
+                    BluetoothPrintHelper.printReceiptComplete(requireContext(), finalToPrint, new BluetoothPrintHelper.OnPrintListener() {
+                        @Override
+                        public void onStart() {}
+
+                        @Override
+                        public void onSuccess(String message) {
+                            if (getContext() != null) {
+                                loadRacuniFromApi();
+                            }
+                        }
+
+                        @Override
+                        public void onError(String errorMessage) {
+                            if (getContext() != null) {
+                                Toast.makeText(requireContext(), "Napaka: " + errorMessage, Toast.LENGTH_LONG).show();
+                                loadRacuniFromApi();
+                            }
+                        }
+                    });
+                });
+            } catch (Exception e) {
+                Globals.getInstance().vpisiNapakoKronologija("IzpisRacuna (seznam) R:" + selId, e);
+                mainHandler.post(() -> {
+                    if (binding != null) binding.pbLoading.setVisibility(View.GONE);
+                    if (getContext() != null) {
+                        Toast.makeText(requireContext(), "Napaka pri izpisu računa #" + selId + ": " + e.getMessage(), Toast.LENGTH_LONG).show();
+                    }
+                });
+            }
         });
     }
 
@@ -414,6 +576,7 @@ public class RacuniFragment extends Fragment implements RacunSeznamAdapter.OnIte
                     applyFilters();
                 });
             } catch (Exception e) {
+                Globals.getInstance().vpisiNapakoKronologija("Racuni loadRacuniFromServer", e);
                 mainHandler.post(() -> {
                     binding.pbLoading.setVisibility(View.GONE);
                     allItems.clear();
@@ -428,11 +591,14 @@ public class RacuniFragment extends Fragment implements RacunSeznamAdapter.OnIte
         String query = binding.etSearchRacun.getText().toString().trim().toLowerCase();
 
         for (RacunSeznamItem item : allItems) {
-            // Filter: Storno računi ne smejo biti v seznamu (ne original, ne storniran). Filter: STORNO_RACUN_ID IS NOT NULL
-            if ((item.getStornoRacunId() != null && item.getStornoRacunId() > 0) ||
-                (item.getStornoOriginal() != null && item.getStornoOriginal() > 0) ||
-                (item.getZnesek() != null && item.getZnesek().compareTo(BigDecimal.ZERO) < 0)) {
-                // Če pa uporabnik v iskalno polje vpiše številko računa, ga prikažemo, da je omogočen ponovni izpis!
+            boolean isOpenStatus1 = (item.getStatus() != null && item.getStatus() == 1);
+            boolean isStornoOrNegative = (item.getStornoRacunId() != null && item.getStornoRacunId() > 0)
+                    || (item.getStornoOriginal() != null && item.getStornoOriginal() > 0)
+                    || (item.getZnesek() != null && item.getZnesek().compareTo(BigDecimal.ZERO) < 0);
+
+            // Izpisani (STATUS != 1) storno računi so skriti, razen ob eksplicitnem iskanju po ID.
+            // Odprti (STATUS == 1) storno računi (npr. po napaki tiskalnika) pa MORAJO biti vidni v seznamu, da se jih lahko izpiše!
+            if (isStornoOrNegative && !isOpenStatus1) {
                 if (!query.isEmpty() && String.valueOf(item.getRacunId()).contains(query)) {
                     // Dovoljen prikaz storno računa ob eksplicitnem iskanju
                 } else {
@@ -591,48 +757,101 @@ public class RacuniFragment extends Fragment implements RacunSeznamAdapter.OnIte
         });
 
         btnNatisni.setOnClickListener(v -> {
-            if (racunHolder[0] == null) return;
-            if (racunHolder[0].getStatus() >= 2 && !Globals.getInstance().isDovoljeno(PraviceConsts.SLahkoPonovnoIzpiseRacun)) {
+            if (racunHolder[0] == null) {
+                Globals.getInstance().vpisiKronologijoDebugL1("IzpisRacuna BLOKIRAN (predogled) R:" + item.getRacunId() + " razlog=racunHolder je null");
+                return;
+            }
+            final RacunTp r = racunHolder[0];
+            Globals.getInstance().vpisiKronologijoDebugL1("IzpisRacuna sprožen (predogled) R:" + r.getRacunId()
+                    + " status=" + r.getStatus() + " zn=" + r.getZnesek() + " stornoId=" + r.getStornoRacunId());
+            if (r.getStatus() >= 2 && !Globals.getInstance().isDovoljeno(PraviceConsts.SLahkoPonovnoIzpiseRacun)) {
+                Globals.getInstance().vpisiKronologijoDebugL1("IzpisRacuna BLOKIRAN R:" + r.getRacunId() + " razlog=ni pravice SLahkoPonovnoIzpiseRacun");
                 Toast.makeText(requireContext(), "Nimate pravice za ponovni izpis računa!", Toast.LENGTH_LONG).show();
                 return;
             }
             dialog.dismiss();
 
-            final RacunTp r = racunHolder[0];
             final int stKopij = stKopijHolder[0];
+
+            final RacunTp[] racunToPrintHolder = new RacunTp[]{r};
 
             binding.pbLoading.setVisibility(View.VISIBLE);
             executor.execute(() -> {
-                // Pravilo: Vedno, ko izpisujemo račun, ki ima status=1, ga postavimo v status=2 na strežniku (Delphi uPrintData.pas:856-871)
+                // Pravilo: Vedno, ko izpisujemo račun, ki ima status=1 (tudi nedokončan storno račun), ga postavimo v status=2 na strežniku
                 if (r.getStatus() == 1) {
                     try {
-                        r.setStatus(2);
-                        r.setStKopij(Math.max(1, stKopij));
                         int mobileId = 0;
                         try { mobileId = Integer.parseInt(prefs.getMobileId()); } catch (Exception ignored) {}
-                        RosKasaSoapClient.setRacun(prefs.getServerUrl(), prefs.getToken(), mobileId, r);
+                        si.ros.RosKasa.models.GetRacunRsTp resp;
+                        if (r.isZeFiskaliziran()) {
+                            // Račun je ŽE fiskaliziran -> spremeni izključno STATUS=2 in STKOPIJ!
+                            int novaKop = Math.max(1, stKopij);
+                            resp = RosKasaSoapClient.setRacunStatusOnly(prefs.getServerUrl(), prefs.getToken(), mobileId, r, 2, novaKop);
+                            r.setStatus(2);
+                            r.setStKopij(novaKop);
+                        } else {
+                            boolean imaFiskalno = false;
+                            if (r.getRacPlaci() != null) {
+                                for (PlaciloTp pl : r.getRacPlaci()) {
+                                    if (pl != null && !pl.isRowDeleted() && pl.getPlaciloId() != 99) {
+                                        si.ros.RosKasa.models.NacPlacTp np = Globals.getInstance().getPlaciloById(pl.getPlaciloId());
+                                        if (np != null && np.getFiskalno() != null && np.getFiskalno() == 1) {
+                                            imaFiskalno = true;
+                                            break;
+                                        }
+                                    }
+                                }
+                            }
+                            if (imaFiskalno) {
+                                r.setFiskalizacija(1);
+                            }
+                            if (r.getRacPozic() != null) {
+                                for (PozicijaTp p : r.getRacPozic()) {
+                                    if (p != null) p.setNeNarocaj(true);
+                                }
+                            }
+                            r.setStatus(2);
+                            r.setStKopij(Math.max(1, stKopij));
+                            resp = RosKasaSoapClient.setRacun(prefs.getServerUrl(), prefs.getToken(), mobileId, r);
+                        }
+                        if (resp != null && resp.getRacGlava() != null) {
+                            RacunTp returned = resp.getRacGlava();
+                            if ((returned.getRacPozic() == null || returned.getRacPozic().isEmpty()) && r.getRacPozic() != null) {
+                                returned.setRacPozic(r.getRacPozic());
+                            }
+                            if (returned.getRacPlaci() == null && r.getRacPlaci() != null) {
+                                returned.setRacPlaci(r.getRacPlaci());
+                            }
+                            if (returned.getFiskalizacija() == null && r.getFiskalizacija() != null) {
+                                returned.setFiskalizacija(r.getFiskalizacija());
+                            }
+                            racunToPrintHolder[0] = returned;
+                        }
                         Globals.getInstance().vpisiKronologijoDebugL1(prefs.getServerUrl(), prefs.getToken(), prefs.getMobileId(),
                                 "UpdateInvoiceStatus R:" + r.getRacunId() + " na status 2 STKOPIJ:" + r.getStKopij(),
                                 Globals.getInstance().getTekocaOsebaId(), Globals.getInstance().getTocilnicaId());
                     } catch (Exception exStatus) {
                         Log.e("RacuniFragment", "Napaka pri posodobitvi statusa 2 za račun #" + r.getRacunId(), exStatus);
+                        Globals.getInstance().vpisiNapakoKronologija("IzpisRacuna setRacun R:" + r.getRacunId(), exStatus);
+                        mainHandler.post(() -> {
+                            if (binding != null) binding.pbLoading.setVisibility(View.GONE);
+                            if (getContext() != null) {
+                                Toast.makeText(requireContext(), "Napaka pri zaključku računa #" + r.getRacunId() + ": " + exStatus.getMessage(), Toast.LENGTH_LONG).show();
+                            }
+                        });
+                        return;
                     }
-                } else if (r.getStatus() >= 2) {
-                    try {
-                        int novaKopija = (r.getStKopij() != null ? r.getStKopij() : 1) + 1;
-                        r.setStKopij(novaKopija);
-                        int mobileId = 0;
-                        try { mobileId = Integer.parseInt(prefs.getMobileId()); } catch (Exception ignored) {}
-                        RosKasaSoapClient.setRacun(prefs.getServerUrl(), prefs.getToken(), mobileId, r);
-                    } catch (Exception ignored) {}
                 }
+                // Opomba: za STATUS >= 2 (ponovni izpis kopije) bo PrintDataHandler / BluetoothPrintHelper.sendRacIzpisanNaServer
+                // izračunal konStKopij = zacStKopij + zaPrintStKopij in ga posodobil na strežniku preko setRacunStatusOnly,
+                // zato STKOPIJ tukaj ne povečujemo dvakrat.
 
                 mainHandler.post(() -> {
                     if (binding != null) binding.pbLoading.setVisibility(View.GONE);
                     if (getContext() == null) return;
 
                     // [DEBUG-TOAST] Toast.makeText(requireContext(), "Tiskanje računa #" + item.getRacunId() + "...", Toast.LENGTH_SHORT).show();
-                    BluetoothPrintHelper.printReceiptComplete(requireContext(), r, new BluetoothPrintHelper.OnPrintListener() {
+                    BluetoothPrintHelper.printReceiptComplete(requireContext(), racunToPrintHolder[0], new BluetoothPrintHelper.OnPrintListener() {
                         @Override
                         public void onStart() {}
 
@@ -657,21 +876,26 @@ public class RacuniFragment extends Fragment implements RacunSeznamAdapter.OnIte
         });
 
         btnStorno.setOnClickListener(v -> {
+            Globals.getInstance().vpisiKronologijoDebugL1("StornoRacuna sprožen (predogled) R:" + item.getRacunId());
             if (!Globals.getInstance().isDovoljeno(PraviceConsts.SLahkoStorniraRacun)) {
+                Globals.getInstance().vpisiKronologijoDebugL1("StornoRacuna BLOKIRAN R:" + item.getRacunId() + " razlog=ni pravice SLahkoStorniraRacun");
                 Toast.makeText(requireContext(), "Nimate pravice za storno računa!", Toast.LENGTH_SHORT).show();
                 return;
             }
             if (item.getStatus() == null || (item.getStatus() != 2 && item.getStatus() != 4)) {
+                Globals.getInstance().vpisiKronologijoDebugL1("StornoRacuna BLOKIRAN R:" + item.getRacunId() + " razlog=status=" + item.getStatus());
                 Toast.makeText(requireContext(), "Stornirati je mogoče le zaključene račune (status 2 ali status 4)!", Toast.LENGTH_SHORT).show();
                 return;
             }
             if (racunHolder[0] == null) {
+                Globals.getInstance().vpisiKronologijoDebugL1("StornoRacuna BLOKIRAN R:" + item.getRacunId() + " razlog=podatki se še nalagajo");
                 Toast.makeText(requireContext(), "Podatki računa se še nalagajo...", Toast.LENGTH_SHORT).show();
                 return;
             }
 
             android.bluetooth.BluetoothAdapter bAdapter = android.bluetooth.BluetoothAdapter.getDefaultAdapter();
             if (!BluetoothPrintHelper.hasBluetoothPermissions(requireContext()) || bAdapter == null || !bAdapter.isEnabled()) {
+                Globals.getInstance().vpisiKronologijoDebugL1("StornoRacuna BLOKIRAN R:" + item.getRacunId() + " razlog=Bluetooth izklopljen ali brez dovoljenj");
                 Toast.makeText(requireContext(), "Bluetooth ni vklopljen ali nimate ustreznih dovoljenj!", Toast.LENGTH_LONG).show();
                 return;
             }
