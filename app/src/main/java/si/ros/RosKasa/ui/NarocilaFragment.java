@@ -81,6 +81,16 @@ public class NarocilaFragment extends Fragment {
     private final ExecutorService executor = Executors.newSingleThreadExecutor();
     private final Handler mainHandler = new Handler(Looper.getMainLooper());
 
+    private VoiceOrderController voiceOrderController;
+    private final androidx.activity.result.ActivityResultLauncher<String> recordAudioPermissionLauncher =
+            registerForActivityResult(new androidx.activity.result.contract.ActivityResultContracts.RequestPermission(), isGranted -> {
+                if (isGranted && voiceOrderController != null) {
+                    voiceOrderController.onPermissionGranted();
+                } else if (getContext() != null) {
+                    Toast.makeText(getContext(), si.ros.RosKasa.R.string.ai_err_no_mic_permission, Toast.LENGTH_LONG).show();
+                }
+            });
+
     @Nullable
     @Override
     public View onCreateView(@NonNull LayoutInflater inflater, @Nullable ViewGroup container, @Nullable Bundle savedInstanceState) {
@@ -101,13 +111,11 @@ public class NarocilaFragment extends Fragment {
         setupQuickKeysRecyclerView();
         setupCenikListRecyclerView();
         setupNavigationButtons();
+        setupVoiceOrderAssistant();
 
         loadInitialOrderData();
         loadCenikItems();
         loadHitreTipkeFromApi();
-        cena2VikendPrazniki();
-        updateGumbNarocilaLevo();
-        updateQuickPaymentHotkeys();
     }
 
     @Override
@@ -230,17 +238,20 @@ public class NarocilaFragment extends Fragment {
                             initNewRacun();
                         }
                         enableEkran();
+                        consumePendingVoiceOrderIfAny();
                     });
                 } catch (Exception e) {
                     mainHandler.post(() -> {
                         enableEkran();
                         Toast.makeText(requireContext(), "Napaka pri nalaganju računa: " + e.getMessage(), Toast.LENGTH_LONG).show();
                         initNewRacun();
+                        consumePendingVoiceOrderIfAny();
                     });
                 }
             });
         } else {
             initNewRacun();
+            consumePendingVoiceOrderIfAny();
         }
     }
 
@@ -629,8 +640,9 @@ public class NarocilaFragment extends Fragment {
     public void cena2VikendPrazniki() {
         Globals g = Globals.getInstance();
 
-        // 1. Prazniki (če so vklopljeni in CENA2 še ni aktivna)
-        if (g.isPrazniki() && !g.isCena2Aktivna()) {
+        // 1. Prazniki (če so vklopljeni in CENA2 še ni aktivna — preveri največ 1× na dan, ne ob vsakem preklopu!)
+        if (g.isPrazniki() && !g.isCena2Aktivna() && !g.isPraznikiCheckedToday()) {
+            g.markPraznikiCheckedToday();
             executor.execute(() -> {
                 try {
                     int obratId = g.getPraznikiObrat();
@@ -698,11 +710,16 @@ public class NarocilaFragment extends Fragment {
     }
 
     private void loadCenikItems() {
-        if (Globals.getInstance().hasCachedCenik()) {
+        Globals g = Globals.getInstance();
+        if (g.hasCachedCenik()) {
+            List<CenikListAdapter.CenikItem> sorted = g.getCachedSortedCenikIfValid(g.isCena2Aktivna(), g.isCena0Cenik());
+            if (sorted == null) {
+                sorted = processAndSortCenikItems(g.getCachedCenik());
+                g.setCachedSortedCenik(sorted, g.isCena2Aktivna(), g.isCena0Cenik());
+            }
             cenikItems.clear();
-            cenikItems.addAll(processAndSortCenikItems(Globals.getInstance().getCachedCenik()));
+            cenikItems.addAll(sorted);
             cenikListAdapter.setItems(cenikItems);
-            displayQuickKeysForGroup(currentSkupinaId);
             return;
         }
 
@@ -3161,9 +3178,388 @@ public class NarocilaFragment extends Fragment {
         });
     }
 
+    private void setupVoiceOrderAssistant() {
+        boolean aiEnabled = Globals.getInstance().isAiEnabled();
+        binding.btnVoiceOrder.setVisibility(aiEnabled ? View.VISIBLE : View.GONE);
+
+        voiceOrderController = new VoiceOrderController(
+                requireContext(),
+                binding.voiceAssistantBar.getRoot(),
+                new VoiceOrderController.Host() {
+                    @Override
+                    public boolean isTableSelectionScreen() {
+                        return false;
+                    }
+
+                    @Override
+                    public String getCurrentMiza() {
+                        return activeMarker != null ? activeMarker : "";
+                    }
+
+                    @Override
+                    public List<si.ros.RosKasa.ai.VoiceOrderModels.CurrentOrderLine> getCurrentOrderLines() {
+                        List<si.ros.RosKasa.ai.VoiceOrderModels.CurrentOrderLine> lines = new ArrayList<>();
+                        if (currentRacun != null && currentRacun.getRacPozic() != null) {
+                            for (PozicijaTp p : currentRacun.getRacPozic()) {
+                                if (p == null || p.isRowDeleted()) continue;
+                                int nid = p.getNivo4Id() != null ? p.getNivo4Id() : 0;
+                                // Pozicija z ID <= 0 je nova (neposlana); > 0 je že shranjena na strežniku
+                                boolean poslano = p.getPozicijaId() > 0;
+                                lines.add(new si.ros.RosKasa.ai.VoiceOrderModels.CurrentOrderLine(
+                                        p.getPozicijaId(),
+                                        nid,
+                                        p.getNaziv(),
+                                        p.getKolicina(),
+                                        p.getHod(),
+                                        p.getDodatniOpis(),
+                                        poslano
+                                ));
+                            }
+                        }
+                        return lines;
+                    }
+
+                    @Override
+                    public void onAiSelectTable(String mizaName,
+                                                si.ros.RosKasa.ai.VoiceOrderModels.VoiceOrderMode mode,
+                                                si.ros.RosKasa.ai.VoiceOrderModels.AiActionResult initialResult) {
+                        switchTableFromVoice(mizaName, mode, initialResult);
+                    }
+
+                    @Override
+                    public int onAiAddItems(List<si.ros.RosKasa.ai.VoiceOrderModels.AiOrderItem> items) {
+                        return applyAiAddItems(items);
+                    }
+
+                    @Override
+                    public int onAiModifyItems(List<si.ros.RosKasa.ai.VoiceOrderModels.AiModifyItem> items) {
+                        return applyAiModifyItems(items);
+                    }
+
+                    @Override
+                    public void onRequestRecordAudioPermission() {
+                        recordAudioPermissionLauncher.launch(android.Manifest.permission.RECORD_AUDIO);
+                    }
+                }
+        );
+
+        binding.btnVoiceOrder.setOnClickListener(v -> {
+            if (voiceOrderController != null) {
+                voiceOrderController.toggle();
+            }
+        });
+    }
+
+    private void consumePendingVoiceOrderIfAny() {
+        si.ros.RosKasa.ai.VoiceOrderSession session = si.ros.RosKasa.ai.VoiceOrderSession.getInstance();
+        si.ros.RosKasa.ai.VoiceOrderModels.AiActionResult pending = session.consumePendingResultForNarocila();
+        boolean autoListen = session.consumeAutoStartListeningOnNarocila();
+        if (pending != null && voiceOrderController != null) {
+            voiceOrderController.applyHandedOffResult(pending, autoListen);
+        }
+    }
+
+    private void switchTableFromVoice(String requestedMiza,
+                                      si.ros.RosKasa.ai.VoiceOrderModels.VoiceOrderMode mode,
+                                      si.ros.RosKasa.ai.VoiceOrderModels.AiActionResult initialResult) {
+        if (requestedMiza == null || requestedMiza.trim().isEmpty()) return;
+
+        if (hasUnsavedChanges) {
+            String msg = getString(si.ros.RosKasa.R.string.ai_unsaved_table_switch);
+            Toast.makeText(requireContext(), msg, Toast.LENGTH_LONG).show();
+            if (voiceOrderController != null) {
+                voiceOrderController.showAssistantMessage(msg, initialResult != null ? initialResult.lang : "sl");
+            }
+            return;
+        }
+
+        // Razreši uradni naziv mize iz cachedMize (npr. "12" -> "Miza 12")
+        String cleanReq = requestedMiza.trim();
+        String reqDigits = cleanReq.replaceAll("[^0-9]", "");
+        String resolvedMarker = cleanReq;
+        for (si.ros.RosKasa.models.MizaTp m : Globals.getInstance().getCachedMize()) {
+            if (m == null) continue;
+            if (m.getNaziv().equalsIgnoreCase(cleanReq)) {
+                resolvedMarker = m.getNaziv();
+                break;
+            }
+            if (!reqDigits.isEmpty() && m.getNaziv().replaceAll("[^0-9]", "").equals(reqDigits)) {
+                resolvedMarker = m.getNaziv();
+                break;
+            }
+        }
+
+        final String finalMarker = Globals.preveriMarker(resolvedMarker);
+        // Pripravi rezultat za nadaljevanje po preklopu (targetMiza počistimo, da se ne zacikla)
+        final si.ros.RosKasa.ai.VoiceOrderModels.AiActionResult followUp = initialResult;
+        if (followUp != null) {
+            followUp.targetMiza = "";
+        }
+
+        if (mode == si.ros.RosKasa.ai.VoiceOrderModels.VoiceOrderMode.NEW) {
+            activeMarker = finalMarker;
+            activeRacunId = 0;
+            prefs.setActiveMarker(finalMarker);
+            prefs.setActiveRacunId(0);
+            Globals.getInstance().setActiveRacunId(0);
+            Globals.getInstance().setCurrentRacun(null);
+            si.ros.RosKasa.ai.VoiceOrderSession.getInstance().setActiveMiza(finalMarker);
+            initNewRacun();
+            if (followUp != null && voiceOrderController != null) {
+                voiceOrderController.applyHandedOffResult(followUp, true);
+            }
+            return;
+        }
+
+        // Poišči morebiten odprt račun za izbrano mizo na strežniku
+        disableEkran("Odpiram " + finalMarker + "...");
+        executor.execute(() -> {
+            int foundRacunId = 0;
+            String blockedByWaiter = null;
+            try {
+                Globals g = Globals.getInstance();
+                boolean vidiVsa = g.isDovoljeno(si.ros.RosKasa.models.PraviceConsts.SVidiVseRacune)
+                        || g.isDovoljeno(si.ros.RosKasa.models.PraviceConsts.SVidiVsaNarocila)
+                        || g.isOdpriVseRacune();
+                java.util.Calendar cal = java.util.Calendar.getInstance();
+                cal.add(java.util.Calendar.DAY_OF_MONTH, -3);
+                String odDatum = new java.text.SimpleDateFormat("yyyy-MM-dd'T'00:00:00", Locale.getDefault()).format(cal.getTime());
+                int pOseba = vidiVsa ? 0 : g.getTekocaOsebaId();
+                int strmId = (g.getTocilnicaId() != null && g.getTocilnicaId() > 0)
+                        ? g.getTocilnicaId() : prefs.getTocilnicaId();
+                List<si.ros.RosKasa.models.RacunSeznamItem> openList = RosKasaSoapClient.getRacuniForMize(
+                        prefs.getServerUrl(),
+                        prefs.getToken(),
+                        prefs.getMobileId(),
+                        1,
+                        odDatum,
+                        pOseba,
+                        strmId
+                );
+                if (openList != null) {
+                    String finalDigits = finalMarker.replaceAll("[^0-9]", "");
+                    for (si.ros.RosKasa.models.RacunSeznamItem acc : openList) {
+                        if (acc == null || acc.getMarker() == null) continue;
+                        String m = acc.getMarker().trim();
+                        boolean match = m.equalsIgnoreCase(finalMarker)
+                                || (!finalDigits.isEmpty() && m.replaceAll("[^0-9]", "").equals(finalDigits));
+                        if (match) {
+                            int kasiralId = acc.getKasiral() != null ? acc.getKasiral() : 0;
+                            if (kasiralId > 0 && kasiralId != g.getTekocaOsebaId() && !vidiVsa) {
+                                si.ros.RosKasa.models.OsebaTp os = g.najdiOseboById(kasiralId);
+                                blockedByWaiter = os != null ? os.getNaziv() : String.valueOf(kasiralId);
+                            } else {
+                                foundRacunId = acc.getRacunId();
+                            }
+                            break;
+                        }
+                    }
+                }
+            } catch (Exception e) {
+                Log.w(TAG, "Napaka pri iskanju odprte mize: " + e.getMessage());
+            }
+
+            final int targetRacunId = foundRacunId;
+            final String fBlocked = blockedByWaiter;
+            mainHandler.post(() -> {
+                enableEkran();
+                if (!isAdded() || binding == null) return;
+                if (fBlocked != null) {
+                    String msg = "Miza je zasedena (odprl: " + fBlocked + ")!";
+                    Toast.makeText(requireContext(), msg, Toast.LENGTH_LONG).show();
+                    if (voiceOrderController != null) {
+                        voiceOrderController.showAssistantMessage(msg, followUp != null ? followUp.lang : "sl");
+                    }
+                    return;
+                }
+                activeMarker = finalMarker;
+                activeRacunId = targetRacunId;
+                prefs.setActiveMarker(finalMarker);
+                prefs.setActiveRacunId(targetRacunId);
+                Globals.getInstance().setActiveRacunId(targetRacunId);
+                if (targetRacunId == 0) {
+                    Globals.getInstance().setCurrentRacun(null);
+                }
+                si.ros.RosKasa.ai.VoiceOrderSession session = si.ros.RosKasa.ai.VoiceOrderSession.getInstance();
+                session.setActiveMiza(finalMarker);
+                if (followUp != null) {
+                    session.setPendingResultForNarocila(followUp, true);
+                }
+                loadInitialOrderData();
+            });
+        });
+    }
+
+    private CenikListAdapter.CenikItem findPositivePriceCenikItem(int nivo4Id, String naziv) {
+        CenikListAdapter.CenikItem ci = findCenikItem(nivo4Id, naziv);
+        if (ci != null) {
+            ci.updateCenaForCurrentState();
+            if (!ci.niMoznaIzbira && ci.cena != null && ci.cena.compareTo(BigDecimal.ZERO) > 0) {
+                return ci;
+            }
+        }
+        // Če je najdeni artikel s ceno 0 (npr. duplikat v ceniku), poišči enako poimenovan artikel s ceno > 0
+        String targetName = (naziv != null && !naziv.trim().isEmpty())
+                ? naziv.trim().toLowerCase(Locale.getDefault())
+                : (ci != null && ci.naziv != null ? ci.naziv.trim().toLowerCase(Locale.getDefault()) : "");
+        if (!targetName.isEmpty()) {
+            for (CenikListAdapter.CenikItem cand : cenikItems) {
+                if (cand == null || cand.niMoznaIzbira) continue;
+                cand.updateCenaForCurrentState();
+                if (cand.cena != null && cand.cena.compareTo(BigDecimal.ZERO) > 0
+                        && cand.naziv != null && cand.naziv.toLowerCase(Locale.getDefault()).contains(targetName)) {
+                    return cand;
+                }
+            }
+        }
+        return null;
+    }
+
+    private int applyAiAddItems(List<si.ros.RosKasa.ai.VoiceOrderModels.AiOrderItem> items) {
+        if (items == null || items.isEmpty()) return 0;
+        Globals g = Globals.getInstance();
+        String prevHod = g.getTekociHod();
+        int bookedCount = 0;
+
+        for (si.ros.RosKasa.ai.VoiceOrderModels.AiOrderItem aiItem : items) {
+            if (aiItem == null) continue;
+            CenikListAdapter.CenikItem ci = findPositivePriceCenikItem(aiItem.nivo4Id, aiItem.naziv);
+            if (ci == null) continue;
+
+            ci.updateCenaForCurrentState();
+            BigDecimal cena = ci.cena != null ? ci.cena : BigDecimal.ZERO;
+            if (cena.compareTo(BigDecimal.ZERO) <= 0) continue;
+
+            final double kol = aiItem.kolicina > 0 ? aiItem.kolicina : 1.0;
+            final String itemHod = (g.isHodNarocila() && aiItem.hod != null && !aiItem.hod.trim().isEmpty())
+                    ? aiItem.hod.trim() : "";
+
+            // Če je artikel lestvični (npr. žgane pijače 0.03/0.05/1 ali točenje 0.1..1) in mera ni bila določena,
+            // odpri RosKasa LestvicaPolnjenjaDialog namesto slepega knjiženja ep=1!
+            if (isLestvicaNacinProdaje(ci.nacinProdaje) && aiItem.ep <= 0.0) {
+                final CenikListAdapter.CenikItem fCi = ci;
+                final BigDecimal fCena = cena;
+                final String fOpomba = aiItem.opomba;
+                LestvicaPolnjenjaDialog.show(requireContext(), fCi.getFormattedNaziv(), fCi.nacinProdaje, fCi.polnjenje,
+                        new LestvicaPolnjenjaDialog.OnScaleSelectedListener() {
+                            @Override
+                            public void onScaleSelected(double epScale) {
+                                String oldH = g.getTekociHod();
+                                if (!itemHod.isEmpty()) g.setTekociHod(itemHod);
+                                knjiziVNarocilo(fCi.nivo4Id, fCi.naziv, fCena, kol, epScale, fCi.paket, fOpomba);
+                                if (!itemHod.isEmpty()) g.setTekociHod(oldH);
+                            }
+
+                            @Override
+                            public void onCancelled() {}
+                        });
+                continue;
+            }
+
+            double ep = aiItem.ep > 0.0 ? aiItem.ep : 1.0;
+
+            if (!itemHod.isEmpty()) {
+                g.setTekociHod(itemHod);
+            }
+
+            knjiziVNarocilo(ci.nivo4Id, ci.naziv, cena, kol, ep, ci.paket, aiItem.opomba);
+            bookedCount++;
+        }
+
+        if (g.isHodNarocila()) {
+            g.setTekociHod(prevHod);
+        }
+        return bookedCount;
+    }
+
+    private int applyAiModifyItems(List<si.ros.RosKasa.ai.VoiceOrderModels.AiModifyItem> mods) {
+        if (mods == null || mods.isEmpty() || currentRacun == null || currentRacun.getRacPozic() == null) return 0;
+        if (isRacunZaklenjen()) return 0;
+
+        int modifiedCount = 0;
+        List<PozicijaTp> pozicije = currentRacun.getRacPozic();
+        boolean allowStornoSent = Globals.getInstance().isStornoPoslanegaNarocilaDovoljen();
+
+        for (si.ros.RosKasa.ai.VoiceOrderModels.AiModifyItem mod : mods) {
+            if (mod == null) continue;
+            int targetIdx = -1;
+            PozicijaTp target = null;
+            String modNameNorm = normalizeForMatch(mod.matchNaziv);
+
+            // Iščemo od zadaj (zadnja vrstica ima prednost)
+            for (int i = pozicije.size() - 1; i >= 0; i--) {
+                PozicijaTp p = pozicije.get(i);
+                if (p == null || p.isRowDeleted()) continue;
+                boolean alreadySent = p.getPozicijaId() > 0;
+                if (alreadySent && !allowStornoSent) continue;
+
+                boolean idMatch = mod.matchNivo4Id > 0 && p.getNivo4Id() != null && p.getNivo4Id() == mod.matchNivo4Id;
+                String pNameNorm = normalizeForMatch(p.getNaziv());
+                boolean nameMatch = !modNameNorm.isEmpty() && !pNameNorm.isEmpty()
+                        && (pNameNorm.contains(modNameNorm) || modNameNorm.contains(pNameNorm));
+                if (idMatch || nameMatch) {
+                    targetIdx = i;
+                    target = p;
+                    break;
+                }
+            }
+            if (target == null || targetIdx < 0) continue;
+
+            if (mod.remove || (mod.novaKolicina == 0.0)) {
+                if (target.getPozicijaId() <= 0) {
+                    pozicije.remove(targetIdx);
+                } else {
+                    target.setRowDeleted(true);
+                }
+                modifiedCount++;
+            } else {
+                if (mod.novNivo4Id > 0 || !mod.novNaziv.isEmpty()) {
+                    CenikListAdapter.CenikItem repl = findPositivePriceCenikItem(mod.novNivo4Id, mod.novNaziv);
+                    if (repl != null) {
+                        double kol = mod.novaKolicina > 0 ? mod.novaKolicina : target.getKolicina();
+                        String opomba = mod.novaOpomba != null ? mod.novaOpomba : target.getDodatniOpis();
+                        if (target.getPozicijaId() <= 0) {
+                            pozicije.remove(targetIdx);
+                        } else {
+                            target.setRowDeleted(true);
+                        }
+                        knjiziVNarocilo(repl.nivo4Id, repl.naziv, repl.cena, kol, 1.0, repl.paket, opomba);
+                        modifiedCount++;
+                        continue;
+                    }
+                }
+                if (mod.novaKolicina > 0) {
+                    target.setKolicina(mod.novaKolicina);
+                    target.recalculateZnesek();
+                }
+                if (mod.novaOpomba != null) {
+                    target.setDodatniOpis(mod.novaOpomba.trim());
+                }
+                modifiedCount++;
+            }
+        }
+
+        if (modifiedCount > 0) {
+            hasUnsavedChanges = true;
+            currentRacun.preracunajVsote();
+            populateOrderItemsFromCurrentRacun();
+        }
+        return modifiedCount;
+    }
+
+    private static String normalizeForMatch(String s) {
+        if (s == null) return "";
+        return s.trim().toLowerCase(Locale.getDefault())
+                .replace('č', 'c').replace('š', 's').replace('ž', 'z').replace('ć', 'c').replace('đ', 'd');
+    }
+
     @Override
     public void onDestroyView() {
         super.onDestroyView();
+        if (voiceOrderController != null) {
+            voiceOrderController.destroy();
+            voiceOrderController = null;
+        }
         binding = null;
     }
 }

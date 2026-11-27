@@ -39,4 +39,25 @@
     <string name="lbl_username">Uporabniško ime:</string>
     <string name="lbl_password">Geslo:</string>
     <string name="lbl_pin">Vnesite PIN kodo ali približajte NFC kartico:</string>
+
+    <!-- Gemini AI glasovno naročanje -->
+    <string name="btn_ai_voice">🎤 AI</string>
+    <string name="ai_status_listening">Poslušam&#8230; (govorite naročilo)</string>
+    <string name="ai_status_paused">Pavza – tapnite Nadaljuj za naslednjega gosta</string>
+    <string name="ai_status_processing">Obdelujem govor&#8230;</string>
+    <string name="ai_status_speaking">Asistent odgovarja&#8230;</string>
+    <string name="ai_status_push_hint">Držite gumb mikrofona in govorite&#8230;</string>
+    <string name="ai_btn_pause">Pavza</string>
+    <string name="ai_btn_resume">Nadaljuj</string>
+    <string name="ai_btn_hold_talk">Drži in govori</string>
+    <string name="ai_btn_close">Zapri</string>
+    <string name="ai_mode_new">Novo naročilo</string>
+    <string name="ai_mode_continue">Nadaljuj naročilo</string>
+    <string name="ai_err_no_api_key">AI_GEMINI_API_KEY ni nastavljen v MOBINI.</string>
+    <string name="ai_err_no_mic_permission">Za glasovno naročanje je potrebno dovoljenje za mikrofon.</string>
+    <string name="ai_err_network">Napaka pri povezavi z Gemini AI: %1$s</string>
+    <string name="ai_table_not_found">Mize \"%1$s\" nisem našel.</string>
+    <string name="ai_booked_summary">Poknjiženo: %1$d postavk(e).</string>
+    <string name="ai_modify_failed">Artikla nisem mogel izbrisati ali popraviti.</string>
+    <string name="ai_unsaved_table_switch">Na trenutni mizi imate neshranjene spremembe – najprej shranite ali pobrišite naročilo.</string>
 </resources>

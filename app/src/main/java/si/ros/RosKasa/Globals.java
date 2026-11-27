@@ -40,6 +40,12 @@ public class Globals {
 
     // Cache za statične šifrante (cenik in hitre tipke)
     private final List<CenikListAdapter.CenikItem> cachedCenik = new ArrayList<>();
+    private final List<CenikListAdapter.CenikItem> cachedSortedCenik = new ArrayList<>();
+    private boolean cachedSortedCenikValid = false;
+    private boolean cachedSortedCenikCena2 = false;
+    private boolean cachedSortedCenikAllow0 = false;
+    private final List<RacunSeznamItem> cachedOpenAccounts = new ArrayList<>();
+    private String praznikiCheckedDate = "";
     private final List<HitraTipkaTp> cachedHitreTipke = new ArrayList<>();
     private final List<CenikVrVrTp> cachedCenikVrVr = new ArrayList<>();
     private final List<DodatekTp> cachedDodatki = new ArrayList<>();
@@ -422,6 +428,15 @@ public class Globals {
     private boolean forceTabletScreen = false;
     private String brisiPlacilaZaAndroid = "";
     private int korekcijaGumbMize = 0;
+
+    // Gemini AI glasovno naročanje (MOBINI: AI_*)
+    private boolean aiEnabled = false;
+    private String aiGeminiApiKey = "";
+    private String aiGeminiModel = "gemini-3.8-flash";
+    private String aiLiveAudioMode = "vad"; // vad | push | live_ws
+    private int aiVadSilenceMs = 700;
+    private String aiLang = "auto"; // auto | sl | en
+    private boolean aiTtsEnabled = true;
 
     private final Map<String, String> mobIniValues = new HashMap<>();
 
@@ -1228,6 +1243,34 @@ public class Globals {
         if (kvPairs.containsKey("PRINTER_RACUN") && !kvPairs.get("PRINTER_RACUN").trim().isEmpty()) this.printerRacuni = kvPairs.get("PRINTER_RACUN").trim();
         if (kvPairs.containsKey("PRINTERRACUNI") && !kvPairs.get("PRINTERRACUNI").trim().isEmpty()) this.printerRacuni = kvPairs.get("PRINTERRACUNI").trim();
         if (kvPairs.containsKey("PRINTERRACUN") && !kvPairs.get("PRINTERRACUN").trim().isEmpty()) this.printerRacuni = kvPairs.get("PRINTERRACUN").trim();
+
+        // Gemini AI glasovno naročanje (MOBINI)
+        if (kvPairs.containsKey("AI_ENABLED")) {
+            String v = kvPairs.get("AI_ENABLED");
+            this.aiEnabled = "D".equalsIgnoreCase(v) || "1".equals(v) || "TRUE".equalsIgnoreCase(v);
+        }
+        if (kvPairs.containsKey("AI_GEMINI_API_KEY") && !kvPairs.get("AI_GEMINI_API_KEY").trim().isEmpty()) {
+            this.aiGeminiApiKey = kvPairs.get("AI_GEMINI_API_KEY").trim();
+        }
+        if (kvPairs.containsKey("AI_GEMINI_MODEL") && !kvPairs.get("AI_GEMINI_MODEL").trim().isEmpty()) {
+            this.aiGeminiModel = kvPairs.get("AI_GEMINI_MODEL").trim();
+        }
+        if (kvPairs.containsKey("AI_LIVE_AUDIO_MODE") && !kvPairs.get("AI_LIVE_AUDIO_MODE").trim().isEmpty()) {
+            this.aiLiveAudioMode = kvPairs.get("AI_LIVE_AUDIO_MODE").trim().toLowerCase(Locale.US);
+        }
+        if (kvPairs.containsKey("AI_VAD_SILENCE_MS")) {
+            try {
+                int ms = Integer.parseInt(kvPairs.get("AI_VAD_SILENCE_MS").trim());
+                if (ms >= 350 && ms <= 5000) this.aiVadSilenceMs = ms;
+            } catch (Exception ignored) {}
+        }
+        if (kvPairs.containsKey("AI_LANG") && !kvPairs.get("AI_LANG").trim().isEmpty()) {
+            this.aiLang = kvPairs.get("AI_LANG").trim().toLowerCase(Locale.US);
+        }
+        if (kvPairs.containsKey("AI_TTS_ENABLED")) {
+            String v = kvPairs.get("AI_TTS_ENABLED");
+            this.aiTtsEnabled = "D".equalsIgnoreCase(v) || "1".equals(v) || "TRUE".equalsIgnoreCase(v);
+        }
     }
 
     private static void parseJsonArrayIntoKvPairs(JSONArray arr, Map<String, String> kvPairs) {
@@ -1548,6 +1591,28 @@ public class Globals {
     public boolean isNePrintamNarT4() { return nePrintamNarT4; }
     public int getPrintBlokPavza() { return printBlokPavza; }
     public boolean isPrintBrezTiskalnika() { return printBrezTiskalnika; }
+
+    // Gemini AI getters / setters
+    public boolean isAiEnabled() { return aiEnabled; }
+    public void setAiEnabled(boolean aiEnabled) { this.aiEnabled = aiEnabled; }
+    public String getAiGeminiApiKey() { return aiGeminiApiKey != null ? aiGeminiApiKey : ""; }
+    public void setAiGeminiApiKey(String aiGeminiApiKey) { this.aiGeminiApiKey = aiGeminiApiKey != null ? aiGeminiApiKey.trim() : ""; }
+    public String getMaskedAiGeminiApiKey() {
+        String key = getAiGeminiApiKey();
+        if (key.isEmpty()) return "";
+        if (key.length() <= 8) return "••••";
+        return key.substring(0, 4) + "••••" + key.substring(key.length() - 4);
+    }
+    public String getAiGeminiModel() { return (aiGeminiModel != null && !aiGeminiModel.isEmpty()) ? aiGeminiModel : "gemini-3.8-flash"; }
+    public void setAiGeminiModel(String aiGeminiModel) { this.aiGeminiModel = (aiGeminiModel != null && !aiGeminiModel.trim().isEmpty()) ? aiGeminiModel.trim() : "gemini-3.8-flash"; }
+    public String getAiLiveAudioMode() { return (aiLiveAudioMode != null && !aiLiveAudioMode.isEmpty()) ? aiLiveAudioMode : "vad"; }
+    public void setAiLiveAudioMode(String aiLiveAudioMode) { this.aiLiveAudioMode = aiLiveAudioMode != null ? aiLiveAudioMode.trim().toLowerCase(Locale.US) : "vad"; }
+    public int getAiVadSilenceMs() { return aiVadSilenceMs; }
+    public void setAiVadSilenceMs(int aiVadSilenceMs) { this.aiVadSilenceMs = Math.max(350, Math.min(5000, aiVadSilenceMs)); }
+    public String getAiLang() { return (aiLang != null && !aiLang.isEmpty()) ? aiLang : "auto"; }
+    public void setAiLang(String aiLang) { this.aiLang = aiLang != null ? aiLang.trim().toLowerCase(Locale.US) : "auto"; }
+    public boolean isAiTtsEnabled() { return aiTtsEnabled; }
+    public void setAiTtsEnabled(boolean aiTtsEnabled) { this.aiTtsEnabled = aiTtsEnabled; }
     public boolean isPrintamVoucher() { return printamVoucher; }
     public void setPrintamVoucher(boolean val) { this.printamVoucher = val; }
     public int getNivo4IdVoucher() { return nivo4IdVoucher; }
@@ -1628,6 +1693,8 @@ public class Globals {
     public synchronized List<CenikListAdapter.CenikItem> getCachedCenik() { return new ArrayList<>(cachedCenik); }
     public synchronized void setCachedCenik(List<CenikListAdapter.CenikItem> items) {
         cachedCenik.clear();
+        cachedSortedCenik.clear();
+        cachedSortedCenikValid = false;
         if (items != null) {
             cachedCenik.addAll(items);
             for (CenikListAdapter.CenikItem ci : items) {
@@ -1636,6 +1703,48 @@ public class Globals {
                 }
             }
         }
+    }
+
+    public synchronized List<CenikListAdapter.CenikItem> getCachedSortedCenikIfValid(boolean cena2Active, boolean allowCena0) {
+        if (cachedSortedCenikValid && cachedSortedCenikCena2 == cena2Active && cachedSortedCenikAllow0 == allowCena0) {
+            return new ArrayList<>(cachedSortedCenik);
+        }
+        return null;
+    }
+
+    public synchronized void setCachedSortedCenik(List<CenikListAdapter.CenikItem> sorted, boolean cena2Active, boolean allowCena0) {
+        cachedSortedCenik.clear();
+        if (sorted != null) cachedSortedCenik.addAll(sorted);
+        cachedSortedCenikCena2 = cena2Active;
+        cachedSortedCenikAllow0 = allowCena0;
+        cachedSortedCenikValid = true;
+    }
+
+    public synchronized void invalidateSortedCenikCache() {
+        cachedSortedCenik.clear();
+        cachedSortedCenikValid = false;
+    }
+
+    public synchronized List<RacunSeznamItem> getCachedOpenAccounts() {
+        return new ArrayList<>(cachedOpenAccounts);
+    }
+
+    public synchronized void setCachedOpenAccounts(List<RacunSeznamItem> accounts) {
+        cachedOpenAccounts.clear();
+        if (accounts != null) cachedOpenAccounts.addAll(accounts);
+    }
+
+    public synchronized boolean isPraznikiCheckedToday() {
+        String today = new SimpleDateFormat("yyyy-MM-dd", Locale.US).format(new Date());
+        return today.equals(praznikiCheckedDate);
+    }
+
+    public synchronized void markPraznikiCheckedToday() {
+        praznikiCheckedDate = new SimpleDateFormat("yyyy-MM-dd", Locale.US).format(new Date());
+    }
+
+    public synchronized void resetPraznikiChecked() {
+        praznikiCheckedDate = "";
     }
 
     public synchronized boolean hasCachedHitreTipke() { return !cachedHitreTipke.isEmpty(); }
@@ -1654,6 +1763,8 @@ public class Globals {
 
     public synchronized void clearCenikCache() {
         cachedCenik.clear();
+        cachedSortedCenik.clear();
+        cachedSortedCenikValid = false;
         cachedHitreTipke.clear();
         nivo4NazivLookup.clear();
     }
@@ -2568,13 +2679,20 @@ public class Globals {
     }
 
     /**
-     * Delphi FormKasaMobile.pas:4530-4537:
-     * Storno že poslanega naročila je dovoljen, če ima oseba pravico SStorniraPoslanoNarocilo
-     * (ali je vklopljen OVERRIDESTORNOPOSLANONAROCILO) in ni blokiran z NISTORNONAROCILA.
+     * Delphi FormKasaMobile.pas:4686-4691:
+     *   if dmGisOrder.OsebiDovoljeno(TekocaOseba, SStorniraPoslanoNarocilo) then
+     *     NiStornoIzpisanegaNarocila := false
+     *   else
+     *     NiStornoIzpisanegaNarocila := true;
+     *   if OVERRIDESTORNOPOSLANONAROCILO then
+     *     NiStornoIzpisanegaNarocila := false;
+     *
+     * NISTORNONAROCILA=D v MOBINI torej NE sme blokirati osebe, ki IMA pravico SStorniraPoslanoNarocilo!
      */
     public synchronized boolean isStornoPoslanegaNarocilaDovoljen() {
-        if (overrideStornoPoslanoNarocilo) return true;
-        if (niStornoIzpisanegaNarocila) return false;
+        if (overrideStornoPoslanoNarocilo) {
+            return true;
+        }
         return isDovoljeno(si.ros.RosKasa.models.PraviceConsts.SStorniraPoslanoNarocilo);
     }
 

@@ -5,6 +5,9 @@
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
 
+    <!-- Mikrofon za glasovno AI naročanje -->
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
+
     <!-- NFC za prijavo s kartico -->
     <uses-permission android:name="android.permission.NFC" />
     <uses-feature android:name="android.hardware.nfc" android:required="false" />

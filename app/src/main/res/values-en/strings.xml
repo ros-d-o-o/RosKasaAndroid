@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Gemini AI Voice Ordering (English) -->
+    <string name="btn_ai_voice">🎤 AI</string>
+    <string name="ai_status_listening">Listening&#8230; (speak the order)</string>
+    <string name="ai_status_paused">Paused – tap Resume for the next guest</string>
+    <string name="ai_status_processing">Processing speech&#8230;</string>
+    <string name="ai_status_speaking">Assistant speaking&#8230;</string>
+    <string name="ai_status_push_hint">Hold the mic button and speak&#8230;</string>
+    <string name="ai_btn_pause">Pause</string>
+    <string name="ai_btn_resume">Resume</string>
+    <string name="ai_btn_hold_talk">Hold to talk</string>
+    <string name="ai_btn_close">Close</string>
+    <string name="ai_mode_new">New order</string>
+    <string name="ai_mode_continue">Continue order</string>
+    <string name="ai_err_no_api_key">AI_GEMINI_API_KEY is not configured in MOBINI.</string>
+    <string name="ai_err_no_mic_permission">Microphone permission is required for voice ordering.</string>
+    <string name="ai_err_network">Gemini AI connection error: %1$s</string>
+    <string name="ai_table_not_found">Table \"%1$s\" was not found.</string>
+    <string name="ai_booked_summary">Booked: %1$d item(s).</string>
+    <string name="ai_modify_failed">Could not delete or modify the item.</string>
+    <string name="ai_unsaved_table_switch">Current table has unsaved changes – save or clear the order first.</string>
+</resources>

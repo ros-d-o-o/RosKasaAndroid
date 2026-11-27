@@ -9,10 +9,14 @@ import android.view.View;
 import android.view.ViewGroup;
 import android.widget.Toast;
 
+import androidx.activity.result.ActivityResultLauncher;
+import androidx.activity.result.contract.ActivityResultContracts;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import androidx.fragment.app.Fragment;
 import androidx.recyclerview.widget.GridLayoutManager;
+
+import android.Manifest;
 
 import java.math.BigDecimal;
 import java.text.SimpleDateFormat;
@@ -44,6 +48,16 @@ public class MizeFragment extends Fragment {
     private FragmentMizeBinding binding;
     private AppPreferences prefs;
     private MizeAdapter mizeAdapter;
+    private final List<MizeAdapter.MizaItem> currentMizeItems = new ArrayList<>();
+    private VoiceOrderController voiceOrderController;
+    private final ActivityResultLauncher<String> recordAudioPermissionLauncher =
+            registerForActivityResult(new ActivityResultContracts.RequestPermission(), isGranted -> {
+                if (isGranted && voiceOrderController != null) {
+                    voiceOrderController.onPermissionGranted();
+                } else if (getContext() != null) {
+                    Toast.makeText(getContext(), si.ros.RosKasa.R.string.ai_err_no_mic_permission, Toast.LENGTH_LONG).show();
+                }
+            });
     private final ExecutorService executor = Executors.newSingleThreadExecutor();
     private final Handler mainHandler = new Handler(Looper.getMainLooper());
 
@@ -94,13 +108,16 @@ public class MizeFragment extends Fragment {
             return true;
         });
 
+        setupVoiceOrderAssistant();
+
         binding.btnMarker.setOnClickListener(v -> odpriNovMarkerNarocilo());
         binding.btnInfo.setOnClickListener(v -> prikaziInfoDialog());
 
         updateNatakarInfo();
         setupRajoniBar();
         setupMizeGrid();
-        // Takoj izriši znane mize iz predpomnilnika, nato onResume osveži zasednost s strežnika (brez dvojnega SOAP klica)
+        // Takoj izriši znane mize + zadnjo znano zasednost iz Globals predpomnilnika (0 ms), nato onResume v ozadju osveži
+        lastLoadedOpenAccounts = Globals.getInstance().getCachedOpenAccounts();
         populateMizeGrid(lastLoadedOpenAccounts);
     }
 
@@ -158,8 +175,98 @@ public class MizeFragment extends Fragment {
         new androidx.appcompat.app.AlertDialog.Builder(requireContext())
                 .setTitle("Informacije o blagajni")
                 .setMessage(msg.toString())
+                .setNeutralButton("Osveži šifrante", (d, w) -> refreshAllCacheDataNow())
                 .setPositiveButton("Zapri", null)
                 .show();
+    }
+
+    /**
+     * Ročna osvežitev vseh predpomnjenih šifrantov (MOBINI, mize, cenik, hitre tipke, dodatki)
+     * neposredno s strežnika brez odjave ali ponovnega zagona aplikacije.
+     */
+    private void refreshAllCacheDataNow() {
+        if (!prefs.isRegistered()) {
+            Toast.makeText(requireContext(), "Aplikacija ni registrirana na strežnik.", Toast.LENGTH_SHORT).show();
+            return;
+        }
+        if (binding != null && binding.layoutMizeLoading != null) {
+            binding.layoutMizeLoading.setVisibility(View.VISIBLE);
+        }
+        Toast.makeText(requireContext(), "Osvežujem šifrante s strežnika...", Toast.LENGTH_SHORT).show();
+
+        final android.content.Context appCtx = requireContext().getApplicationContext();
+        executor.execute(() -> {
+            try {
+                Globals g = Globals.getInstance();
+                si.ros.RosKasa.cache.LocalCacheManager.invalidateLargeSifrantiCache(appCtx);
+                g.clearCenikCache();
+                g.resetPraznikiChecked();
+
+                int mobId = 1;
+                try { mobId = Integer.parseInt(prefs.getMobileId()); } catch (Exception ignored) {}
+
+                // 1. MobileSetup (MOBINI + mize + osebe + tarife + prioritete)
+                si.ros.RosKasa.models.MobileSetupTp setup = RosKasaSoapClient.getAppConfig(
+                        prefs.getServerUrl(), prefs.getToken(), mobId
+                );
+                if (setup != null) {
+                    g.loadFromMobileSetup(setup, mobId);
+                    si.ros.RosKasa.cache.LocalCacheManager.saveSifranti(appCtx, setup);
+                }
+
+                // 2. Cenik
+                int obratId = prefs.getHisObrat();
+                List<CenikListAdapter.CenikItem> cenik = RosKasaSoapClient.getCenik(
+                        prefs.getServerUrl(), prefs.getToken(), obratId
+                );
+                if (cenik != null && !cenik.isEmpty()) {
+                    g.setCachedCenik(cenik);
+                }
+
+                // 3. Hitre tipke
+                int tipkePosId = g.getTipkePosId() > 0 ? g.getTipkePosId() : prefs.getTipkePosId();
+                List<si.ros.RosKasa.models.HitraTipkaTp> tipke = RosKasaSoapClient.getHitreTipke(
+                        prefs.getServerUrl(), prefs.getToken(), tipkePosId
+                );
+                if (tipke != null && !tipke.isEmpty()) {
+                    g.setCachedHitreTipke(tipke);
+                }
+
+                // 4. Dodatki
+                List<si.ros.RosKasa.models.DodatekTp> dodatki = RosKasaSoapClient.getDodatki(
+                        prefs.getServerUrl(), prefs.getToken()
+                );
+                if (dodatki != null) {
+                    g.setCachedDodatki(dodatki);
+                }
+
+                si.ros.RosKasa.cache.LocalCacheManager.saveLargeSifranti(appCtx);
+                int cenikCount = g.getCachedCenik().size();
+                int tipkeCount = g.getCachedHitreTipke().size();
+                g.vpisiKronologijo("Ročna osvežitev šifrantov: cenik=" + cenikCount + ", tipke=" + tipkeCount);
+
+                mainHandler.post(() -> {
+                    if (!isAdded() || binding == null) return;
+                    if (binding.layoutMizeLoading != null) {
+                        binding.layoutMizeLoading.setVisibility(View.GONE);
+                    }
+                    binding.btnVoiceOrder.setVisibility(g.isAiEnabled() ? View.VISIBLE : View.INVISIBLE);
+                    setupRajoniBar();
+                    loadOpenTablesData();
+                    Toast.makeText(requireContext(),
+                            "Šifranti osveženi (cenik: " + cenikCount + ", tipke: " + tipkeCount + ").",
+                            Toast.LENGTH_LONG).show();
+                });
+            } catch (Exception e) {
+                mainHandler.post(() -> {
+                    if (!isAdded() || binding == null) return;
+                    if (binding.layoutMizeLoading != null) {
+                        binding.layoutMizeLoading.setVisibility(View.GONE);
+                    }
+                    Toast.makeText(requireContext(), "Napaka pri osveževanju šifrantov: " + e.getMessage(), Toast.LENGTH_LONG).show();
+                });
+            }
+        });
     }
 
     private void updateNatakarInfo() {
@@ -328,7 +435,10 @@ public class MizeFragment extends Fragment {
                         binding.layoutMizeLoading.setVisibility(View.GONE);
                     }
                     if (binding != null) {
-                        populateMizeGrid(openAccounts != null ? openAccounts : new ArrayList<>());
+                        List<RacunSeznamItem> safeList = openAccounts != null ? openAccounts : new ArrayList<>();
+                        lastLoadedOpenAccounts = safeList;
+                        Globals.getInstance().setCachedOpenAccounts(safeList);
+                        populateMizeGrid(safeList);
                     }
                 });
             } catch (Exception e) {
@@ -551,7 +661,132 @@ public class MizeFragment extends Fragment {
             }
         }
 
+        currentMizeItems.clear();
+        currentMizeItems.addAll(mizeList);
         mizeAdapter.setItems(mizeList);
+    }
+
+    private void setupVoiceOrderAssistant() {
+        boolean aiEnabled = Globals.getInstance().isAiEnabled();
+        binding.btnVoiceOrder.setVisibility(aiEnabled ? View.VISIBLE : View.INVISIBLE);
+
+        voiceOrderController = new VoiceOrderController(
+                requireContext(),
+                binding.voiceAssistantBar.getRoot(),
+                new VoiceOrderController.Host() {
+                    @Override
+                    public boolean isTableSelectionScreen() {
+                        return true;
+                    }
+
+                    @Override
+                    public String getCurrentMiza() {
+                        return "";
+                    }
+
+                    @Override
+                    public List<si.ros.RosKasa.ai.VoiceOrderModels.CurrentOrderLine> getCurrentOrderLines() {
+                        return java.util.Collections.emptyList();
+                    }
+
+                    @Override
+                    public void onAiSelectTable(String mizaName,
+                                                si.ros.RosKasa.ai.VoiceOrderModels.VoiceOrderMode mode,
+                                                si.ros.RosKasa.ai.VoiceOrderModels.AiActionResult initialResult) {
+                        openTableFromVoice(mizaName, mode, initialResult);
+                    }
+
+                    @Override
+                    public int onAiAddItems(List<si.ros.RosKasa.ai.VoiceOrderModels.AiOrderItem> items) {
+                        return 0;
+                    }
+
+                    @Override
+                    public int onAiModifyItems(List<si.ros.RosKasa.ai.VoiceOrderModels.AiModifyItem> items) {
+                        return 0;
+                    }
+
+                    @Override
+                    public void onRequestRecordAudioPermission() {
+                        recordAudioPermissionLauncher.launch(Manifest.permission.RECORD_AUDIO);
+                    }
+                }
+        );
+
+        binding.btnVoiceOrder.setOnClickListener(v -> {
+            if (voiceOrderController != null) {
+                voiceOrderController.toggle();
+            }
+        });
+    }
+
+    private void openTableFromVoice(String requestedMiza,
+                                    si.ros.RosKasa.ai.VoiceOrderModels.VoiceOrderMode mode,
+                                    si.ros.RosKasa.ai.VoiceOrderModels.AiActionResult initialResult) {
+        if (requestedMiza == null || requestedMiza.trim().isEmpty()) return;
+        String cleanReq = requestedMiza.trim();
+        String reqLower = cleanReq.toLowerCase(Locale.getDefault());
+        String reqDigits = cleanReq.replaceAll("[^0-9]", "");
+
+        MizeAdapter.MizaItem matched = null;
+        for (MizeAdapter.MizaItem item : currentMizeItems) {
+            if (item.naziv.equalsIgnoreCase(cleanReq)) {
+                matched = item;
+                break;
+            }
+        }
+        if (matched == null && !reqDigits.isEmpty()) {
+            for (MizeAdapter.MizaItem item : currentMizeItems) {
+                String itemDigits = item.naziv.replaceAll("[^0-9]", "");
+                if (!itemDigits.isEmpty() && itemDigits.equals(reqDigits)) {
+                    matched = item;
+                    break;
+                }
+            }
+        }
+        if (matched == null) {
+            for (MizeAdapter.MizaItem item : currentMizeItems) {
+                if (item.naziv.toLowerCase(Locale.getDefault()).contains(reqLower)) {
+                    matched = item;
+                    break;
+                }
+            }
+        }
+
+        Globals g = Globals.getInstance();
+        String targetMarker;
+        int targetRacunId;
+
+        if (matched != null) {
+            if (matched.isOccupied && matched.kasiralOsebaId > 0 && matched.kasiralOsebaId != g.getTekocaOsebaId()) {
+                if (!g.isDovoljeno(si.ros.RosKasa.models.PraviceConsts.SVidiVseRacune)
+                        && !g.isDovoljeno(si.ros.RosKasa.models.PraviceConsts.SVidiVsaNarocila)) {
+                    String natakarIme = !matched.kasiralNaziv.isEmpty() ? matched.kasiralNaziv : matched.kasiralInicialke;
+                    Toast.makeText(requireContext(), "Miza je zasedena (odprl: " + natakarIme + ")!", Toast.LENGTH_LONG).show();
+                    return;
+                }
+            }
+            targetMarker = matched.naziv;
+            targetRacunId = (mode == si.ros.RosKasa.ai.VoiceOrderModels.VoiceOrderMode.NEW) ? 0 : matched.racunId;
+        } else {
+            targetMarker = Globals.preveriMarker(cleanReq);
+            targetRacunId = 0;
+        }
+
+        prefs.setActiveMarker(targetMarker);
+        prefs.setActiveRacunId(targetRacunId);
+        g.setActiveRacunId(targetRacunId);
+        if (targetRacunId == 0) {
+            g.setCurrentRacun(null);
+        }
+
+        si.ros.RosKasa.ai.VoiceOrderSession session = si.ros.RosKasa.ai.VoiceOrderSession.getInstance();
+        session.setActiveMiza(targetMarker);
+        session.setPendingResultForNarocila(initialResult, true);
+
+        if (getActivity() instanceof MainActivity) {
+            ((MainActivity) getActivity()).navigateToFragment(new NarocilaFragment());
+        }
     }
 
     private void odpriNovMarkerNarocilo() {
@@ -588,6 +823,10 @@ public class MizeFragment extends Fragment {
     @Override
     public void onDestroyView() {
         super.onDestroyView();
+        if (voiceOrderController != null) {
+            voiceOrderController.destroy();
+            voiceOrderController = null;
+        }
         binding = null;
     }
 }

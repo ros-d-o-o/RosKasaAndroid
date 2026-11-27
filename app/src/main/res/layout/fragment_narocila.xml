@@ -16,22 +16,53 @@
         android:padding="2dp"
         android:background="#222222" />
 
-    <!-- Statusna vrstica mize in zneska -->
-    <TextView
-        android:id="@+id/tvMizaStatus"
+    <!-- Kompaktna vrstica Gemini AI glasovnega asistenta (ne zakriva seznama postavk) -->
+    <include
+        android:id="@+id/voiceAssistantBar"
+        layout="@layout/view_voice_assistant_bar" />
+
+    <!-- Statusna vrstica mize in zneska + gumb AI mikrofon -->
+    <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:minHeight="36dp"
-        android:paddingStart="6dp"
-        android:paddingEnd="6dp"
-        android:paddingTop="4dp"
-        android:paddingBottom="4dp"
-        android:background="#111111"
-        android:gravity="center"
-        android:textColor="#FFFFFF"
-        android:textSize="16sp"
-        android:textStyle="bold"
-        android:text="M: Miza 5  -  Zn: 4,00 / Pl: 0,00" />
+        android:orientation="horizontal"
+        android:gravity="center_vertical"
+        android:background="#111111">
+
+        <TextView
+            android:id="@+id/tvMizaStatus"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:minHeight="36dp"
+            android:paddingStart="6dp"
+            android:paddingEnd="6dp"
+            android:paddingTop="4dp"
+            android:paddingBottom="4dp"
+            android:gravity="center"
+            android:textColor="#FFFFFF"
+            android:textSize="16sp"
+            android:textStyle="bold"
+            android:text="M: Miza 5  -  Zn: 4,00 / Pl: 0,00" />
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/btnVoiceOrder"
+            android:layout_width="wrap_content"
+            android:layout_height="36dp"
+            android:minWidth="0dp"
+            android:minHeight="0dp"
+            android:paddingStart="10dp"
+            android:paddingEnd="10dp"
+            android:paddingTop="0dp"
+            android:paddingBottom="0dp"
+            android:layout_marginEnd="4dp"
+            android:backgroundTint="#00897B"
+            android:text="@string/btn_ai_voice"
+            android:textColor="#FFFFFF"
+            android:textSize="12sp"
+            android:textAllCaps="false"
+            android:visibility="gone" />
+    </LinearLayout>
 
     <!-- POS Krmilni gumbi Naročila (Vsi gumbi 56dp višina, alignBounds) -->
     <GridLayout
