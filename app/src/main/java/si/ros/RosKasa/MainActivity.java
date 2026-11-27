@@ -323,7 +323,7 @@ public class MainActivity extends AppCompatActivity {
         if (!g.isSixTap()) {
             return;
         }
-        if (!g.isKronologIzklop() && g.isDebugL1()) {
+        if (!g.isKronologIzklop() && g.isDebugL0()) {
             g.vpisiKronologijo("SIXTAP VKLOPLJEN");
         }
         if (!g.isRecoverTapOn()) {
@@ -398,8 +398,8 @@ public class MainActivity extends AppCompatActivity {
                 if (r != null) {
                     r.preracunajVsote();
                     java.math.BigDecimal saldo = r.getZnesek().subtract(r.getPlacano());
-                    Integer fiskalniId = r.getFiskalniRacunId();
-                    if ((fiskalniId == null || fiskalniId == 0) && saldo.compareTo(java.math.BigDecimal.ZERO) > 0) {
+                    if (!r.isZeFiskaliziran() && saldo.compareTo(java.math.BigDecimal.ZERO) > 0) {
+                        g.vpisiKronologijo("SIXTAP RECOVER -> kličem LAST_TRANSACTION R:" + zadnjiSixRacunId + " SESSION_ID:" + finalSessionId + " saldo:" + saldo);
                         runOnUiThread(() -> {
                             Toast.makeText(MainActivity.this, "Okrevanje: Preverjam prekinjeno plačilo za račun #" + zadnjiSixRacunId + "...", Toast.LENGTH_SHORT).show();
                             android.content.Intent lastIntent = si.ros.RosKasa.payment.SixTapPaymentService.buildPaymentIntent(
@@ -481,6 +481,9 @@ public class MainActivity extends AppCompatActivity {
                     }
 
                     if (!zeVpisan) {
+                        if (r.getOriginalObject() == null) {
+                            r.setOriginalObject(r.deepCopy());
+                        }
                         int placiloId = resp.getpPlaciloId() > 0 ? resp.getpPlaciloId() : (Globals.getInstance().getSixTapPlaciloId() > 0 ? Globals.getInstance().getSixTapPlaciloId() : 2);
                         java.math.BigDecimal znesekPOS = resp.getZnesekPOS().compareTo(java.math.BigDecimal.ZERO) > 0 ? resp.getZnesekPOS() : r.getZnesek().subtract(r.getPlacano());
                         java.math.BigDecimal napitnina = resp.getpNapitnina();
@@ -496,6 +499,9 @@ public class MainActivity extends AppCompatActivity {
                         pl.setDelniZnesek(znesekRacuna);
                         pl.setZnesek(BigDecimal.ZERO);
                         pl.setPozicijaId(-1);
+                        pl.setVerzijaZapisa(0);
+                        pl.setRowDeleted(false);
+                        pl.setOriginalObject(null);
                         int kupecId = Globals.getInstance().resolvePosKupecId(placiloId, resp.getCardnumber(), resp.getClient(), resp.getMerchant(), resp.getApplicationIdentifier());
                         if (kupecId > 0) {
                             pl.setKupecId(kupecId);
@@ -525,24 +531,41 @@ public class MainActivity extends AppCompatActivity {
                             r.setStatus(1);
                         }
 
-                        // 1. setSlipEma
+                        // 1. setSlipEma (usklajeno s PlacilaFragment/NarocilaFragment in Delphi DoCreateSlipEma)
+                        String fullSlip = (resp.getClient() != null && !resp.getClient().isEmpty())
+                                ? resp.getClient()
+                                : (resp.getMerchant() != null ? resp.getMerchant() : "");
+                        if (!fullSlip.isEmpty()) {
+                            Globals.getInstance().setZadnjiSlip(racunId, fullSlip);
+                        }
+                        String op = (resp.getpOperacija() != null && !resp.getpOperacija().isEmpty())
+                                ? resp.getpOperacija()
+                                : si.ros.RosKasa.payment.SixTapPaymentService.OP_LAST_TRANSACTION;
+                        int tocId = (r.getTocilnicaId() != null && r.getTocilnicaId() > 0)
+                                ? r.getTocilnicaId()
+                                : (Globals.getInstance().getTocilnicaId() != null && Globals.getInstance().getTocilnicaId() > 0 ? Globals.getInstance().getTocilnicaId() : 0);
+
                         si.ros.RosKasa.models.SlipEmaTp slip = new si.ros.RosKasa.models.SlipEmaTp();
                         slip.setStevilkaRacuna(racunId);
                         slip.setPozicijaId(1);
-                        slip.setSlipPrint(resp.getClient());
-                        slip.setSlipPrints(resp.getMerchant());
-                        slip.setStevilkaKartice(resp.getCardnumber());
+                        slip.setSlipPrint(resp.getClient() != null ? resp.getClient() : "");
+                        slip.setSlipPrints(resp.getMerchant() != null ? resp.getMerchant() : "");
+                        slip.setStevilkaKartice(si.ros.RosKasa.payment.SixTapPaymentService.extractDigitsOnly(resp.getCardnumber()));
+                        slip.setCardNumber(si.ros.RosKasa.payment.SixTapPaymentService.cleanCardNumber(resp.getCardnumber()));
                         slip.setUspelo("DA");
                         slip.setProjektId(3);
-                        slip.setStType(resp.getpOperacija());
+                        slip.setStType(op);
                         slip.setZnesek(znesekRacuna);
                         slip.setZnesekSlip(znesekPOS);
                         slip.setAcqTransRef(resp.getpWpiSessionId() != null && !resp.getpWpiSessionId().isEmpty() ? resp.getpWpiSessionId() : resp.getPaymentSolutionReference());
-                        slip.setAppIdentifier(resp.getApplicationIdentifier());
-                        slip.setAcqReference(resp.getAcqreference());
-                        slip.setAuthReference(resp.getPaymentSolutionReference());
+                        slip.setAppIdentifier(resp.getApplicationIdentifier() != null ? resp.getApplicationIdentifier() : "");
+                        slip.setAcqReference(resp.getAcqreference() != null ? resp.getAcqreference() : "");
+                        String authNum = resp.getAuthNumber() != null ? resp.getAuthNumber() : "";
+                        slip.setAuthNumber(authNum);
+                        slip.setAuthReference(!authNum.isEmpty() ? authNum : (resp.getAcqreference() != null ? resp.getAcqreference() : ""));
                         slip.setAvtorizacija("PAY");
-                        Globals.getInstance().vpisiKronologijo("SIXTAP setSlipEma R:" + racunId + " Kartica:" + slip.getStevilkaKartice() + " Auth:" + slip.getAuthReference() + " M_REF: " + slip.getAcqTransRef() + " Op: " + slip.getStType());
+                        slip.setStrmId(tocId);
+                        Globals.getInstance().vpisiKronologijo("SIXTAP setSlipEma R:" + racunId + " Kartica:" + slip.getStevilkaKartice() + " Auth:" + slip.getAuthNumber() + " M_REF: " + resp.getPaymentSolutionReference() + " Op: " + slip.getStType() + " STRM:" + tocId);
                         boolean slipOk = RosKasaSoapClient.setSlipEma(prefs.getServerUrl(), prefs.getToken(), slip);
                         if (slipOk) {
                             Globals.getInstance().vpisiKronologijo("SIXTAP setSlipEma USPEH R:" + racunId);
@@ -556,10 +579,12 @@ public class MainActivity extends AppCompatActivity {
                         si.ros.RosKasa.models.GetRacunRsTp res = si.ros.RosKasa.soap.RosKasaSoapClient.setRacun(prefs.getServerUrl(), prefs.getToken(), mobileId, r);
                         if (res != null && res.getRacGlava() != null) {
                             r = res.getRacGlava();
+                            Globals.getInstance().vpisiKronologijo("SIXTAP RECOVER setRacun USPEH R:" + racunId + " STATUS:" + r.getStatus());
                         }
 
                         // 3. Tiskanje zaključenega računa
                         final si.ros.RosKasa.models.RacunTp finalR = r;
+                        Globals.getInstance().setCurrentRacun(finalR);
                         runOnUiThread(() -> {
                             si.ros.RosKasa.print.BluetoothPrintHelper.printReceiptComplete(MainActivity.this, finalR, null);
                             Toast.makeText(MainActivity.this, "Okrevanje: Račun #" + racunId + " je bil uspešno knjižen in natisnjen!", Toast.LENGTH_LONG).show();
@@ -568,9 +593,10 @@ public class MainActivity extends AppCompatActivity {
                 }
             } catch (Exception e) {
                 android.util.Log.e("MainActivity", "Napaka pri knjiženju potrjene transakcije: " + e.getMessage(), e);
-                Globals.getInstance().vpisiKronologijo("SIXTAP Napaka pri knjiženju potrjene transakcije: " + e.getMessage());
+                Globals.getInstance().vpisiNapakoKronologija("SIXTAP RECOVER knjiženje", e);
             } finally {
                 // 3. Po uspešnem klicu ali zaključku obvezno počistimo shrambo podatkov transakcije
+                Globals.getInstance().vpisiKronologijo("SIXTAP RECOVER ClearAllRecoveryData R:" + resp.getpRacunId());
                 runOnUiThread(() -> si.ros.RosKasa.payment.PaymentRecoveryManager.clearAllRecoveryData(MainActivity.this));
             }
         });

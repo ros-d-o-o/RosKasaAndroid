@@ -141,7 +141,7 @@ public class PaymentRecoveryManager {
         if (iRacunId != null && !iRacunId.isEmpty()) editor.putString(KEY_INTENT_RACUN_ID, iRacunId);
         if (iZnesekInt != null && !iZnesekInt.isEmpty()) editor.putString(KEY_INTENT_ZNESEK_INT, iZnesekInt);
 
-        editor.apply();
+        editor.commit();
     }
 
     public static PendingPaymentInfo tryGetPendingPayment(Context context) {
@@ -164,7 +164,7 @@ public class PaymentRecoveryManager {
         editor.remove(KEY_INTENT_SESSION_ID);
         editor.remove(KEY_INTENT_RACUN_ID);
         editor.remove(KEY_INTENT_ZNESEK_INT);
-        editor.apply();
+        editor.commit();
     }
 
     public static void saveRecoveryPayment(Context context, String aSessionId, String aRacunId, String aZnesekInt,
@@ -178,7 +178,7 @@ public class PaymentRecoveryManager {
         if (iRacunId != null && !iRacunId.isEmpty()) editor.putString(KEY_RECOVER_INTENT_RACUN_ID, iRacunId);
         if (iZnesekInt != null && !iZnesekInt.isEmpty()) editor.putString(KEY_RECOVER_INTENT_ZNESEK_INT, iZnesekInt);
 
-        editor.apply();
+        editor.commit();
     }
 
     public static PendingPaymentInfo tryGetRecoveryPayment(Context context) {
@@ -202,7 +202,7 @@ public class PaymentRecoveryManager {
         editor.remove(KEY_RECOVER_INTENT_RACUN_ID);
         editor.remove(KEY_RECOVER_INTENT_ZNESEK_INT);
         editor.remove(KEY_RECOVER_RETRY_COUNT);
-        editor.apply();
+        editor.commit();
     }
 
     public static int getRecoveryRetryCount(Context context) {

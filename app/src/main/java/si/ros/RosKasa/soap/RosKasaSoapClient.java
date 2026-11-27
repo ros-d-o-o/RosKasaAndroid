@@ -2153,14 +2153,26 @@ public class RosKasaSoapClient {
             rq.addProperty("AVTORIZACIJA", req.getAvtorizacija() != null ? req.getAvtorizacija() : "PAY");
             rq.addProperty("PROJEKT_ID", req.getProjektId());
             rq.addProperty("ACQTRANSREF", req.getAcqTransRef() != null ? req.getAcqTransRef() : "");
-            rq.addProperty("STTYPE", req.getStType() != null ? req.getStType() : "");
+            String stTypeVal = req.getStType() != null ? req.getStType() : "";
+            if (stTypeVal.length() > 19) {
+                // Skladno z Delphi uSixTapPayment.pas: Copy(pOperacija, 0, 19) (Oracle STTYPE omejitev)
+                stTypeVal = stTypeVal.substring(0, 19);
+            }
+            rq.addProperty("STTYPE", stTypeVal);
             rq.addProperty("APPIDENTIFIER", req.getAppIdentifier() != null ? req.getAppIdentifier() : "");
             rq.addProperty("AUTHREFERENCE", req.getAuthReference() != null ? req.getAuthReference() : "");
             rq.addProperty("AUTHNUMBER", req.getAuthNumber() != null ? req.getAuthNumber() : "");
             rq.addProperty("CARDNUMBER", req.getCardNumber() != null ? req.getCardNumber() : "");
             rq.addProperty("ACQREFERENCE", req.getAcqReference() != null ? req.getAcqReference() : "");
-            if (req.getStrmId() != null) {
-                rq.addProperty("STRM_ID", req.getStrmId());
+            Integer strmId = req.getStrmId();
+            if (strmId == null || strmId <= 0) {
+                Integer fallbackToc = Globals.getInstance().getTocilnicaId();
+                if (fallbackToc != null && fallbackToc > 0) {
+                    strmId = fallbackToc;
+                }
+            }
+            if (strmId != null) {
+                rq.addProperty("STRM_ID", strmId);
             }
             if (req.getZnesekSlip() != null) {
                 rq.addProperty("ZNESEK_SLIP", req.getZnesekSlip().toPlainString());
@@ -2181,7 +2193,7 @@ public class RosKasaSoapClient {
                 SoapFault fault = (SoapFault) envelope.bodyIn;
                 String faultStr = fault.faultstring != null ? fault.faultstring : fault.toString();
                 Log.w(TAG, "setSlipEma SoapFault: " + faultStr);
-                Globals.getInstance().vpisiKronologijo("setSlipEma SoapFault: " + faultStr);
+                Globals.getInstance().vpisiNapakoKronologija("setSlipEma SoapFault", faultStr);
                 return false;
             }
             if (envelope.bodyIn instanceof SoapObject) {
@@ -2192,7 +2204,7 @@ public class RosKasaSoapClient {
                         String f = getPropertyStringSafe((SoapObject) rObj, "fault");
                         if (f != null && !f.trim().isEmpty()) {
                             Log.w(TAG, "setSlipEma server fault: " + f);
-                            Globals.getInstance().vpisiKronologijo("setSlipEma fault: " + f);
+                            Globals.getInstance().vpisiNapakoKronologija("setSlipEma fault", f);
                             return false;
                         }
                     }
@@ -2201,7 +2213,7 @@ public class RosKasaSoapClient {
             return true;
         } catch (Exception e) {
             Log.w(TAG, "setSlipEma napaka: " + e.getMessage());
-            Globals.getInstance().vpisiKronologijo("setSlipEma NAPAKA: " + e.getMessage());
+            Globals.getInstance().vpisiNapakoKronologija("setSlipEma", e);
             return false;
         }
     }
@@ -2211,13 +2223,13 @@ public class RosKasaSoapClient {
         String soapAction = NAMESPACE + "/" + methodName;
         List<AkcijaTp> list = new ArrayList<>();
         if (racunId <= 0) {
-            String msg = methodName + " preklican: racunId <= 0 (" + racunId + ")";
+            String msg = methodName + " preklican R:" + racunId + " (racunId <= 0)";
             Log.d(TAG, msg);
-            Globals.getInstance().vpisiKronologijoDebugL0(msg);
+            Globals.getInstance().vpisiKronologijoDebugL2(msg);
             return list;
         }
 
-        Globals.getInstance().vpisiKronologijoDebugL0("Klic " + methodName + " zacetek za racunId=" + racunId);
+        Globals.getInstance().vpisiKronologijoDebugL2("Klic " + methodName + " zacetek R:" + racunId);
 
         try {
             SoapObject request = new SoapObject(NAMESPACE, methodName);
@@ -2260,13 +2272,13 @@ public class RosKasaSoapClient {
                     }
                 }
             }
-            String succMsg = methodName + " uspeh za racunId=" + racunId + ", prejetih kuponov: " + list.size();
+            String succMsg = methodName + " uspeh R:" + racunId + ", prejetih kuponov: " + list.size();
             Log.d(TAG, succMsg);
-            Globals.getInstance().vpisiKronologijoDebugL0(succMsg);
+            Globals.getInstance().vpisiKronologijoDebugL2(succMsg);
         } catch (Exception e) {
-            String errMsg = methodName + " napaka za racunId=" + racunId + ": " + e.getMessage();
+            String errMsg = methodName + " napaka R:" + racunId + ": " + e.getMessage();
             Log.w(TAG, errMsg, e);
-            Globals.getInstance().vpisiKronologijoDebugL0(errMsg);
+            Globals.getInstance().vpisiNapakoKronologija(methodName + " R:" + racunId, e);
         }
         return list;
     }
@@ -2276,13 +2288,13 @@ public class RosKasaSoapClient {
         String soapAction = NAMESPACE + "/" + methodName;
         List<AkcijaTp> list = new ArrayList<>();
         if (racunId <= 0) {
-            String msg = methodName + " preklican: racunId <= 0 (" + racunId + ")";
+            String msg = methodName + " preklican R:" + racunId + " (racunId <= 0)";
             Log.d(TAG, msg);
-            Globals.getInstance().vpisiKronologijoDebugL0(msg);
+            Globals.getInstance().vpisiKronologijoDebugL2(msg);
             return list;
         }
 
-        Globals.getInstance().vpisiKronologijoDebugL0("Klic " + methodName + " zacetek za racunId=" + racunId);
+        Globals.getInstance().vpisiKronologijoDebugL2("Klic " + methodName + " zacetek R:" + racunId);
 
         try {
             SoapObject request = new SoapObject(NAMESPACE, methodName);
@@ -2327,13 +2339,13 @@ public class RosKasaSoapClient {
                     }
                 }
             }
-            String succMsg = methodName + " uspeh za racunId=" + racunId + ", prejetih kuponov: " + list.size();
+            String succMsg = methodName + " uspeh R:" + racunId + ", prejetih kuponov: " + list.size();
             Log.d(TAG, succMsg);
-            Globals.getInstance().vpisiKronologijoDebugL0(succMsg);
+            Globals.getInstance().vpisiKronologijoDebugL2(succMsg);
         } catch (Exception e) {
-            String errMsg = methodName + " napaka za racunId=" + racunId + ": " + e.getMessage();
+            String errMsg = methodName + " napaka R:" + racunId + ": " + e.getMessage();
             Log.w(TAG, errMsg, e);
-            Globals.getInstance().vpisiKronologijoDebugL0(errMsg);
+            Globals.getInstance().vpisiNapakoKronologija(methodName + " R:" + racunId, e);
         }
         return list;
     }
@@ -2476,7 +2488,7 @@ public class RosKasaSoapClient {
                 request.addProperty("token", token);
             }
 
-            Globals.getInstance().vpisiKronologijoDebugL1(serverUrl, token, "",
+            Globals.getInstance().vpisiKronologijoDebugL2(serverUrl, token, "",
                     "ws.insertIzpisan post R:" + izpisan.getRacunId() + " OSEBA:" + izpisan.getOsebaId() + " TOC:" + izpisan.getTocilnicaId(),
                     izpisan.getOsebaId(), izpisan.getTocilnicaId());
 
@@ -2523,7 +2535,7 @@ public class RosKasaSoapClient {
             }
 
             Log.d(TAG, "insertIzpisan USPEŠNO za račun: " + izpisan.getRacunId());
-            Globals.getInstance().vpisiKronologijoDebugL1(serverUrl, token, "",
+            Globals.getInstance().vpisiKronologijoDebugL2(serverUrl, token, "",
                     "ws.insertIzpisan USPEH R:" + izpisan.getRacunId(),
                     izpisan.getOsebaId(), izpisan.getTocilnicaId());
         } catch (Exception e) {
@@ -3571,8 +3583,8 @@ public class RosKasaSoapClient {
                 }
             }
 
-            String opis = "Klic setRacun (RACUN_ID=" + racun.getRacunId() + ", STATUS=" + racun.getStatus() + ") -> USPEH. Nova VERZIJA=" + (result.getRacGlava() != null ? result.getRacGlava().getVerzijaZapisa() : "?");
-            vpisKronologijeAsync(serverUrl, token, String.valueOf(mobileId), opis, 0, 0);
+            String opis = "Klic setRacun (R:" + racun.getRacunId() + ", STATUS=" + racun.getStatus() + ") -> USPEH. Nova VERZIJA=" + (result.getRacGlava() != null ? result.getRacGlava().getVerzijaZapisa() : "?");
+            vpisKronologijeDebugL2Async(serverUrl, token, String.valueOf(mobileId), opis, 0, 0);
 
         } catch (VersionConflictException vce) {
             String opis = "Klic setRacun KONFLIKT VERZIJE: R:" + racun.getRacunId() + " " + vce.getMessage();

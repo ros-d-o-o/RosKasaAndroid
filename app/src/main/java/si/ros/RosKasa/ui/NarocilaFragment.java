@@ -1239,6 +1239,10 @@ public class NarocilaFragment extends Fragment {
         }
 
         hasUnsavedChanges = true;
+        int logRacId = currentRacun.getRacunId() <= 0 ? -1 : currentRacun.getRacunId();
+        g.vpisiKronologijoDebugL1("KnjizenjePostavke R:" + logRacId
+                + " nivo4=" + nivo4Id + " artikel=" + naziv
+                + " kol=" + kolicina + " ep=" + ep + " cena=" + cena);
         currentRacun.posodobiZnesekIzNarocila();
         currentRacun.preracunajVsote();
         // Vedno 100% sinhroniziraj orderItems iz racPozic
@@ -1369,6 +1373,9 @@ public class NarocilaFragment extends Fragment {
         }
 
         hasUnsavedChanges = true;
+        g.vpisiKronologijoDebugL1("KnjizenjePaketa R:" + targetRacunId
+                + " nivo4=" + nivo4Id + " artikel=" + naziv
+                + " kol=" + kolicina + " cena=" + cena);
         currentRacun.posodobiZnesekIzNarocila();
         currentRacun.preracunajVsote();
         populateOrderItemsFromCurrentRacun();
@@ -1734,14 +1741,14 @@ public class NarocilaFragment extends Fragment {
 
         binding.btnBrisanje.setOnClickListener(v -> {
             int rId = currentRacun != null ? currentRacun.getRacunId() : 0;
-            Globals.getInstance().vpisiKronologijoDebugL1("BrisanjePostavke sproženo R:" + rId);
+            Globals.getInstance().vpisiKronologijoDebugL0("BrisanjePostavke sproženo R:" + rId);
             if (isRacunZaklenjen()) {
-                Globals.getInstance().vpisiKronologijoDebugL1("BrisanjePostavke BLOKIRANO R:" + rId + " razlog=račun zaklenjen");
+                Globals.getInstance().vpisiKronologijoDebugL0("BrisanjePostavke BLOKIRANO R:" + rId + " razlog=račun zaklenjen");
                 Toast.makeText(requireContext(), "Račun je zaključen! Brisanje postavk ni dovoljeno.", Toast.LENGTH_LONG).show();
                 return;
             }
             if (orderItems.isEmpty()) {
-                Globals.getInstance().vpisiKronologijoDebugL1("BrisanjePostavke BLOKIRANO R:" + rId + " razlog=ni postavk");
+                Globals.getInstance().vpisiKronologijoDebugL0("BrisanjePostavke BLOKIRANO R:" + rId + " razlog=ni postavk");
                 Toast.makeText(requireContext(), "Naročilo nima postavk za brisanje.", Toast.LENGTH_SHORT).show();
                 return;
             }
@@ -1754,14 +1761,14 @@ public class NarocilaFragment extends Fragment {
             NarociloItem itemToDelete = orderItems.get(selPos);
             if (itemToDelete.getPozicijaId() > 0) {
                 if (!Globals.getInstance().isStornoPoslanegaNarocilaDovoljen()) {
-                    Globals.getInstance().vpisiKronologijoDebugL1("BrisanjePostavke BLOKIRANO R:" + rId
+                    Globals.getInstance().vpisiKronologijoDebugL0("BrisanjePostavke BLOKIRANO R:" + rId
                             + " pozId=" + itemToDelete.getPozicijaId() + " artikel=" + itemToDelete.getNaziv()
                             + " razlog=ni pravice SStorniraPoslanoNarocilo");
                     Toast.makeText(requireContext(), "Nimate pravice za storniranje že poslanega artikla!", Toast.LENGTH_SHORT).show();
                     return;
                 }
             }
-            Globals.getInstance().vpisiKronologijoDebugL1("BrisanjePostavke izvedeno R:" + rId
+            Globals.getInstance().vpisiKronologijoDebugL0("BrisanjePostavke izvedeno R:" + rId
                     + " pozId=" + itemToDelete.getPozicijaId() + " nivo4=" + itemToDelete.getNivo4Id()
                     + " artikel=" + itemToDelete.getNaziv());
 
@@ -2727,8 +2734,14 @@ public class NarocilaFragment extends Fragment {
                 PaymentRecoveryManager.saveRecoveryPayment(requireContext(), sessionId, String.valueOf(racunId), String.valueOf(amountCents),
                         sessionId, String.valueOf(racunId), String.valueOf(amountCents));
                 if (g.isSixTapAutoLast()) {
+                    g.vpisiKronologijo("SIXTAP AUTOMATIC LAST_TRANSACTION R:" + racunId + " SESSION_ID: " + sessionId);
                     Toast.makeText(requireContext(), "Prekinjeno. Avtomatsko preverjam status plačila...", Toast.LENGTH_SHORT).show();
-                    izvediSixTapLastTransaction(sessionId, racunId, zaplacilo, placiloId, nacinNaziv);
+                    // Klic izven onSixTapResult callbacka (brez rekurzije / zaciklanja, skladno z Delphi TThread.ForceQueue)
+                    new android.os.Handler(android.os.Looper.getMainLooper()).post(() -> {
+                        if (isAdded()) {
+                            izvediSixTapLastTransaction(sessionId, racunId, zaplacilo, placiloId, nacinNaziv);
+                        }
+                    });
                 } else {
                     new androidx.appcompat.app.AlertDialog.Builder(requireContext())
                             .setTitle("Plačilo prekinjeno")
@@ -2759,20 +2772,31 @@ public class NarocilaFragment extends Fragment {
                 Globals.getInstance().setSixtapintransaction(false);
                 if (resultCode == android.app.Activity.RESULT_OK && data != null) {
                     SixTapResponse resp = SixTapPaymentService.parseResponseIntent(data);
-                    if (resp.isSuccess()) {
+                    if (resp.getpRacunId() <= 0) {
                         resp.setpRacunId(racunId);
-                        resp.setpPlaciloId(placiloId);
-                        resp.setpZnesek(preostanek);
+                    }
+                    resp.setpPlaciloId(placiloId);
+                    resp.setpZnesek(preostanek);
+                    resp.setpOperacija(SixTapPaymentService.OP_LAST_TRANSACTION);
+                    if (resp.isSuccess() && resp.getPaymentSolutionReference() != null && !resp.getPaymentSolutionReference().isEmpty()) {
+                        Globals.getInstance().vpisiKronologijo("SIXTAP LAST_TRANSACTION USPEH R:" + resp.getpRacunId() + " M_REF:" + resp.getPaymentSolutionReference());
                         PaymentRecoveryManager.saveConfirmedPOSTransaction(requireContext(), resp, PaymentRecoveryManager.POS_STATE_POS_CONFIRMED);
                         BigDecimal znesekPOS = resp.getZnesekPOS().compareTo(BigDecimal.ZERO) > 0 ? resp.getZnesekPOS() : preostanek;
-                        zakljuciUspesnoPosPlacilo(nacinNaziv, placiloId, znesekPOS, resp.getCardnumber(), resp.getPaymentSolutionReference(),
-                                resp.getpWpiSessionId(), resp.getClient(), resp.getMerchant(), resp.getApplicationIdentifier(),
-                                resp.getAcqreference(), resp.getAuthNumber(), resp.getpNapitnina(), resp.getpOperacija());
+                        if (currentRacun != null && resp.getpRacunId() == currentRacun.getRacunId()) {
+                            zakljuciUspesnoPosPlacilo(nacinNaziv, placiloId, znesekPOS, resp.getCardnumber(), resp.getPaymentSolutionReference(),
+                                    resp.getpWpiSessionId(), resp.getClient(), resp.getMerchant(), resp.getApplicationIdentifier(),
+                                    resp.getAcqreference(), resp.getAuthNumber(), resp.getpNapitnina(), resp.getpOperacija());
+                        } else {
+                            activity.bookConfirmedPOSTransaction(resp);
+                        }
                     } else {
+                        Globals.getInstance().vpisiKronologijo("SIXTAP LAST_TRANSACTION NEUSPEH R:" + racunId + " Err:" + resp.getErrorCondition() + " -> brišem registre/flage");
                         PaymentRecoveryManager.clearAllRecoveryData(requireContext());
                         Toast.makeText(requireContext(), "Zadnja transakcija ni bila potrjena: " + resp.getErrorCondition() + " " + resp.getRemark(), Toast.LENGTH_LONG).show();
                     }
                 } else {
+                    Globals.getInstance().vpisiKronologijo("SIXTAP LAST_TRANSACTION PREKLICAN R:" + racunId + " -> brišem registre/flage");
+                    PaymentRecoveryManager.clearAllRecoveryData(requireContext());
                     Toast.makeText(requireContext(), "Preverjanje zadnje transakcije prekinjeno.", Toast.LENGTH_SHORT).show();
                 }
             }

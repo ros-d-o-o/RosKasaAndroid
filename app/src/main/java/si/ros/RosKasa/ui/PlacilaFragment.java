@@ -2938,8 +2938,14 @@ public class PlacilaFragment extends Fragment {
                 PaymentRecoveryManager.saveRecoveryPayment(requireContext(), sessionId, String.valueOf(racunId), String.valueOf(amountCents),
                         sessionId, String.valueOf(racunId), String.valueOf(amountCents));
                 if (g.isSixTapAutoLast()) {
+                    Globals.getInstance().vpisiKronologijo("SIXTAP AUTOMATIC LAST_TRANSACTION R:" + racunId + " SESSION_ID: " + sessionId);
                     Toast.makeText(requireContext(), "Prekinjeno. Avtomatsko preverjam status plačila...", Toast.LENGTH_SHORT).show();
-                    izvediSixTapLastTransaction(sessionId, racunId, zaplacilo, placiloId, nacinNaziv);
+                    // Klic izven onSixTapResult callbacka (brez rekurzije / zaciklanja, skladno z Delphi TThread.ForceQueue)
+                    new android.os.Handler(android.os.Looper.getMainLooper()).post(() -> {
+                        if (isAdded()) {
+                            izvediSixTapLastTransaction(sessionId, racunId, zaplacilo, placiloId, nacinNaziv);
+                        }
+                    });
                 } else {
                     new androidx.appcompat.app.AlertDialog.Builder(requireContext())
                             .setTitle("Plačilo prekinjeno")
@@ -3035,17 +3041,31 @@ public class PlacilaFragment extends Fragment {
                 enableEkran();
                 if (resultCode == android.app.Activity.RESULT_OK && data != null) {
                     SixTapResponse resp = SixTapPaymentService.parseResponseIntent(data);
+                    if (resp.getpRacunId() <= 0) {
+                        resp.setpRacunId(racunId);
+                    }
+                    resp.setpPlaciloId(placiloId);
+                    resp.setpZnesek(preostanek);
+                    resp.setpOperacija(SixTapPaymentService.OP_LAST_TRANSACTION);
                     if (resp.isSuccess() && resp.getPaymentSolutionReference() != null && !resp.getPaymentSolutionReference().isEmpty()) {
+                        Globals.getInstance().vpisiKronologijo("SIXTAP LAST_TRANSACTION USPEH R:" + resp.getpRacunId() + " M_REF:" + resp.getPaymentSolutionReference());
                         PaymentRecoveryManager.saveConfirmedPOSTransaction(requireContext(), resp, PaymentRecoveryManager.POS_STATE_POS_CONFIRMED);
                         BigDecimal znesekPOS = resp.getZnesekPOS().compareTo(BigDecimal.ZERO) > 0 ? resp.getZnesekPOS() : preostanek;
-                        zakljuciUspesnoPosPlacilo(nacinNaziv, placiloId, znesekPOS, resp.getCardnumber(), resp.getPaymentSolutionReference(),
-                                resp.getpWpiSessionId(), resp.getClient(), resp.getMerchant(), resp.getApplicationIdentifier(), resp.getAcqreference(),
-                                resp.getAuthNumber(), resp.getpNapitnina(), resp.getpOperacija());
+                        if (currentRacun != null && resp.getpRacunId() == currentRacun.getRacunId()) {
+                            zakljuciUspesnoPosPlacilo(nacinNaziv, placiloId, znesekPOS, resp.getCardnumber(), resp.getPaymentSolutionReference(),
+                                    resp.getpWpiSessionId(), resp.getClient(), resp.getMerchant(), resp.getApplicationIdentifier(), resp.getAcqreference(),
+                                    resp.getAuthNumber(), resp.getpNapitnina(), resp.getpOperacija());
+                        } else {
+                            // Če smo LAST_TRANSACTION sprožili z drugega računa, poknjiži in izpiši pravi račun (pendingRacunId)
+                            activity.bookConfirmedPOSTransaction(resp);
+                        }
                     } else {
+                        Globals.getInstance().vpisiKronologijo("SIXTAP LAST_TRANSACTION NEUSPEH R:" + racunId + " Err:" + resp.getErrorCondition() + " -> brišem registre/flage");
                         PaymentRecoveryManager.clearAllRecoveryData(requireContext());
                         Toast.makeText(requireContext(), "LAST_TRANSACTION: Transakcija na POS ni bila uspešna.", Toast.LENGTH_LONG).show();
                     }
                 } else {
+                    Globals.getInstance().vpisiKronologijo("SIXTAP LAST_TRANSACTION PREKLICAN R:" + racunId + " -> brišem registre/flage");
                     PaymentRecoveryManager.clearAllRecoveryData(requireContext());
                     Toast.makeText(requireContext(), "LAST_TRANSACTION: Preverjanje prekinjeno ali neuspešno.", Toast.LENGTH_SHORT).show();
                 }

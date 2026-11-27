@@ -827,7 +827,7 @@ public class RacuniFragment extends Fragment implements RacunSeznamAdapter.OnIte
                             }
                             racunToPrintHolder[0] = returned;
                         }
-                        Globals.getInstance().vpisiKronologijoDebugL1(prefs.getServerUrl(), prefs.getToken(), prefs.getMobileId(),
+                        Globals.getInstance().vpisiKronologijoDebugL2(prefs.getServerUrl(), prefs.getToken(), prefs.getMobileId(),
                                 "UpdateInvoiceStatus R:" + r.getRacunId() + " na status 2 STKOPIJ:" + r.getStKopij(),
                                 Globals.getInstance().getTekocaOsebaId(), Globals.getInstance().getTocilnicaId());
                     } catch (Exception exStatus) {
@@ -1286,7 +1286,7 @@ public class RacuniFragment extends Fragment implements RacunSeznamAdapter.OnIte
                                     int mobileId = 0;
                                     try { mobileId = Integer.parseInt(prefs.getMobileId()); } catch (Exception ignored) {}
                                     RosKasaSoapClient.setRacun(prefs.getServerUrl(), prefs.getToken(), mobileId, fetchedStornoRacun);
-                                    Globals.getInstance().vpisiKronologijoDebugL1(prefs.getServerUrl(), prefs.getToken(), prefs.getMobileId(),
+                                    Globals.getInstance().vpisiKronologijoDebugL2(prefs.getServerUrl(), prefs.getToken(), prefs.getMobileId(),
                                             "UpdateInvoiceStatus R:" + stornoRacunId + " na status 2 STKOPIJ:1",
                                             Globals.getInstance().getTekocaOsebaId(), Globals.getInstance().getTocilnicaId());
                                 } catch (Exception exStatus) {

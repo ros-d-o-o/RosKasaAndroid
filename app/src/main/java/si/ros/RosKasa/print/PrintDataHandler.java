@@ -74,7 +74,7 @@ public class PrintDataHandler {
 
                 // 1. KASKADA PRIDOBIVANJA PODATKOV (Pre-Print Retrieval) — VEDNO pred Bluetoothom,
                 // da se RACIZPISAN vedno zapiše v bazo tudi ob napaki Bluetooth tiskalnika!
-                globals.vpisiKronologijo("PrintDataHandler: Začetek priprave podatkov za R:" + racun.getRacunId());
+                globals.vpisiKronologijoDebugL2("PrintDataHandler: Začetek priprave podatkov za R:" + racun.getRacunId());
                 PrintDataWS printData = retrievePrintData(serverUrl, token, racun, globals);
 
                 int zaPrintKopij = printData.getZaPrintStKopij();
@@ -209,7 +209,7 @@ public class PrintDataHandler {
                 } catch (Exception ignored) {}
 
                 // RACIZPISAN je bil že shranjen na strežnik pred Bluetooth tiskanjem
-                postSuccess(listener, "Izpis uspešno poslan na " + deviceName + "!");
+                postSuccess(listener, "Izpis uspešno poslan na " + deviceName + "!", racun.getRacunId());
 
             } catch (SecurityException se) {
                 Log.e(TAG, "Bluetooth SecurityException", se);
@@ -434,35 +434,35 @@ public class PrintDataHandler {
         int stornoOrig = racun.getStornoOriginal() != null ? racun.getStornoOriginal() : 0;
         boolean hasServer = serverUrl != null && !serverUrl.trim().isEmpty();
 
-        String diagAkcije = "retrievePrintData preverjanje akcij: racunId=" + racId
+        String diagAkcije = "retrievePrintData preverjanje akcij R:" + racId
                 + ", isAkcije=" + isAkcije
                 + ", status=" + racStatus
                 + ", stornoRacunId=" + stornoRacId
                 + ", stornoOriginal=" + stornoOrig
                 + ", hasServerUrl=" + hasServer;
         Log.d(TAG, diagAkcije);
-        globals.vpisiKronologijoDebugL0(diagAkcije);
+        globals.vpisiKronologijoDebugL2(diagAkcije);
 
         if (!isAkcije) {
-            String razlog = "Akcije preskocene: AKCIJE niso omogocene v nastavitvah (isAkcije=false).";
+            String razlog = "Akcije preskocene R:" + racId + ": AKCIJE niso omogocene v nastavitvah (isAkcije=false).";
             Log.d(TAG, razlog);
-            globals.vpisiKronologijoDebugL0(razlog);
+            globals.vpisiKronologijoDebugL2(razlog);
         } else if (!hasServer) {
-            String razlog = "Akcije preskocene: ni povezave s streznikom (serverUrl je prazen).";
+            String razlog = "Akcije preskocene R:" + racId + ": ni povezave s streznikom (serverUrl je prazen).";
             Log.w(TAG, razlog);
-            globals.vpisiKronologijoDebugL0(razlog);
+            globals.vpisiKronologijoDebugL2(razlog);
         } else if (racId <= 0) {
-            String razlog = "Akcije preskocene: racunId <= 0 (" + racId + ").";
+            String razlog = "Akcije preskocene R:" + racId + ": racunId <= 0.";
             Log.w(TAG, razlog);
-            globals.vpisiKronologijoDebugL0(razlog);
+            globals.vpisiKronologijoDebugL2(razlog);
         } else if (stornoRacId > 0 || stornoOrig > 0) {
-            String razlog = "Akcije preskocene: racun je storno (stornoRacunId=" + stornoRacId + ", stornoOriginal=" + stornoOrig + ").";
+            String razlog = "Akcije preskocene R:" + racId + ": racun je storno (stornoRacunId=" + stornoRacId + ", stornoOriginal=" + stornoOrig + ").";
             Log.d(TAG, razlog);
-            globals.vpisiKronologijoDebugL0(razlog);
+            globals.vpisiKronologijoDebugL2(razlog);
         } else if (racStatus != 1 && racStatus != 2) {
-            String razlog = "Akcije preskocene: status racuna (" + racStatus + ") ni 1 ali 2.";
+            String razlog = "Akcije preskocene R:" + racId + ": status racuna (" + racStatus + ") ni 1 ali 2.";
             Log.d(TAG, razlog);
-            globals.vpisiKronologijoDebugL0(razlog);
+            globals.vpisiKronologijoDebugL2(razlog);
         } else {
             try {
                 // 1. Naziv akcije, če je akcija vezana na sam račun
@@ -486,18 +486,18 @@ public class PrintDataHandler {
                 if (kuponi != null && !kuponi.isEmpty()) {
                     data.setAkcijeList(kuponi);
                     data.setAkcijePrint(true);
-                    String kMsg = "Akcije uspesno pripravljene za tisk: " + kuponi.size() + " kuponov.";
+                    String kMsg = "Akcije uspesno pripravljene za tisk R:" + racId + ": " + kuponi.size() + " kuponov.";
                     Log.d(TAG, kMsg);
-                    globals.vpisiKronologijoDebugL0(kMsg);
+                    globals.vpisiKronologijoDebugL2(kMsg);
                 } else {
-                    String kMsg = "Za racunId=" + racId + " ni bilo generiranih promocijskih kuponov.";
+                    String kMsg = "Za R:" + racId + " ni bilo generiranih promocijskih kuponov.";
                     Log.d(TAG, kMsg);
-                    globals.vpisiKronologijoDebugL0(kMsg);
+                    globals.vpisiKronologijoDebugL2(kMsg);
                 }
             } catch (Exception e) {
-                String errMsg = "retrievePrintData napaka akcije: " + e.getMessage();
+                String errMsg = "retrievePrintData napaka akcije R:" + racId + ": " + e.getMessage();
                 Log.w(TAG, errMsg, e);
-                globals.vpisiKronologijoDebugL0(errMsg);
+                globals.vpisiNapakoKronologija("retrievePrintData akcije R:" + racId, e);
             }
         }
 
@@ -610,8 +610,8 @@ public class PrintDataHandler {
         outputStream.flush();
     }
 
-    private static void postSuccess(BluetoothPrintHelper.OnPrintListener listener, String msg) {
-        Globals.getInstance().vpisiKronologijo("PrintDataHandler USPEH: " + msg);
+    private static void postSuccess(BluetoothPrintHelper.OnPrintListener listener, String msg, int racunId) {
+        Globals.getInstance().vpisiKronologijoDebugL1("PrintDataHandler USPEH R:" + racunId + ": " + msg);
         mainHandler.post(() -> {
             if (listener != null) listener.onSuccess(msg);
         });

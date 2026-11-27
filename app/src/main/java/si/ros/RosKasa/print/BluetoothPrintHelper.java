@@ -153,17 +153,17 @@ public class BluetoothPrintHelper {
                 izpisan.setUra(uraStr);
 
                 // Kronologija pred pošiljanjem (Delphi skladnost)
-                g.vpisiKronologijoDebugL1(serverUrl, token, prefs.getMobileId(),
+                g.vpisiKronologijoDebugL2(serverUrl, token, prefs.getMobileId(),
                         "RacIzpisanNaServer R:" + racun.getRacunId() + " stk: " + stKopij,
                         osebaId, tocilnicaId);
 
                 if (vsebina != null && !vsebina.isEmpty()) {
-                    g.vpisiKronologijoDebugL1(serverUrl, token, prefs.getMobileId(),
+                    g.vpisiKronologijoDebugL2(serverUrl, token, prefs.getMobileId(),
                             "RacIzpisanNaServer stringlist memo R:" + racun.getRacunId(),
                             osebaId, tocilnicaId);
                 }
 
-                g.vpisiKronologijoDebugL1(serverUrl, token, prefs.getMobileId(),
+                g.vpisiKronologijoDebugL2(serverUrl, token, prefs.getMobileId(),
                         "RacIzpisanNaServer ws post R:" + racun.getRacunId(),
                         osebaId, tocilnicaId);
 
@@ -197,7 +197,7 @@ public class BluetoothPrintHelper {
                         }
                         Log.d(TAG, "UpdateInvoiceStatus: račun R:" + racun.getRacunId() + " status=" + targetStatus + " STKOPIJ=" + konStKopij);
 
-                        g.vpisiKronologijoDebugL1(serverUrl, token, prefs.getMobileId(),
+                        g.vpisiKronologijoDebugL2(serverUrl, token, prefs.getMobileId(),
                                 "UpdateInvoiceStatus R:" + racun.getRacunId() + " status=" + targetStatus + " STKOPIJ:" + konStKopij,
                                 g.getTekocaOsebaId(), g.getTocilnicaId());
                     } catch (Exception exStatus) {
